@@ -1,0 +1,12 @@
+version: '3'
+
+tasks:
+  lint:
+    desc: Run oxlint across the repository
+    cmds:
+      - bun run lint
+
+  format:
+    desc: Format files with oxfmt
+    cmds:
+      - bun run fmt
