@@ -8,5 +8,5 @@
   "jsxSingleQuote": false,
   "endOfLine": "lf",
   "sortImports": {},
-  "ignorePatterns": ["dist", "node_modules", "bun.lock"]
+  "ignorePatterns": ["dist", "node_modules", "bun.lock", "tools/oxlint/anti-slop/**"]
 }

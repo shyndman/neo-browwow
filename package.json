@@ -13,6 +13,7 @@
     "lint": "oxlint --deny-warnings ."
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.94.0",
     "@types/bun": "latest",
     "oxfmt": "latest",
     "oxlint": "latest",

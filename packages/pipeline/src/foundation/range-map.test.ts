@@ -242,6 +242,7 @@ describe('RangeMap.split', () => {
     const map = new RangeMap<string>(() => {
       throw new Error('splitter should not be called');
     });
+
     map.append('empty', 0);
     map.append('abc', 3);
 
