@@ -1,3 +1,5 @@
+.envrc
+
 # dependencies
 node_modules/
 
