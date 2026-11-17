@@ -1,5 +1,9 @@
 # Domain Language
 
+**Document Type**:
+The editorial form of a document — such as a research paper, blog post, encyclopedia entry, or news article — that governs how its sections and inline elements are spoken aloud.
+_Avoid_: Document category, document kind, genre
+
 **Sentence**:
 A contiguous inline span within a paragraph that forms a natural unit of speech.
 _Avoid_: Utterance, segment, chunk
