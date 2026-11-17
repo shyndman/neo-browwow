@@ -42,12 +42,50 @@ export interface Parenthetical {
 export type TextSpan = Sentence | Parenthetical;
 
 /**
- * Endpoint metadata attached only to the `start` and `end` text leaves of each
- * `TextSpan`. When a boundary leaf is split, `starts` migrate to the left leaf
- * and `ends` migrate to the right leaf.
+ * Split-aware endpoint metadata attached to `node.data` on the `start` and `end`
+ * `Text` leaves of each {@link TextSpan} (`Sentence` or `Parenthetical`).
+ *
+ * Rather than inserting custom wrapper nodes around spans — which would cleave
+ * straddling inline formatting such as `emphasis`, `strong`, or `link` — the
+ * pipeline cleaves only `Text` leaves at span boundaries and records span
+ * membership here via {@link TextMetadata.attach}. Interior `Text` leaves and
+ * non-text inline nodes carry no `TextMetadata`.
+ *
+ * When a tagged `Text` leaf is later cleaved into `[left, right]` (for example,
+ * when sentence splitting cleaves a leaf already tagged by parenthetical
+ * extraction), {@link onSplit} migrates `starts` (and updates `span.start`) to
+ * `left`, and migrates `ends` (and updates `span.end`) to `right`, while leaving
+ * `span.commonAncestor` unchanged.
+ *
+ * A leaf's `starts` or `ends` array holds multiple spans whenever a
+ * `Parenthetical` and one or more `Sentence` spans share that boundary leaf —
+ * for example, when internal sentence breaks split a `Parenthetical` into inner
+ * `Sentence` spans, or when an outer `Sentence` begins directly at an opening
+ * bracket or ends directly at a closing bracket.
+ *
+ * @example
+ * Given `"We use Adam (see Kingma, 2015. Compare Loshchilov, 2019) for all runs."`,
+ * the paragraph's `Text` leaves are cleaved into four nodes whose `data` holds:
+ * ```text
+ * "We use Adam "              -> starts: [hostSentence]
+ * "(see Kingma, 2015."         -> starts: [parenthetical, innerSentence1], ends: [innerSentence1]
+ * " Compare Loshchilov, 2019)" -> starts: [innerSentence2], ends: [parenthetical, innerSentence2]
+ * " for all runs."             -> ends:   [hostSentence]
+ * ```
  */
 export class TextMetadata implements TextData {
+  /**
+   * `TextSpan`s (`Sentence` or `Parenthetical`) whose first `Text` leaf (`span.start`)
+   * is this node. Holds multiple spans when a `Parenthetical` and an inner or
+   * outer `Sentence` start on the same leaf.
+   */
   readonly starts: TextSpan[];
+
+  /**
+   * `TextSpan`s (`Sentence` or `Parenthetical`) whose last `Text` leaf (`span.end`)
+   * is this node. Holds multiple spans when a `Parenthetical` and an inner or
+   * outer `Sentence` end on the same leaf.
+   */
   readonly ends: TextSpan[];
 
   constructor(starts: TextSpan[] = [], ends: TextSpan[] = []) {
