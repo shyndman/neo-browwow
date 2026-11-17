@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+
 import type { Emphasis, Image, InlineCode, Link, Paragraph, Root, Strong, Text } from 'mdast';
 import { VFile } from 'vfile';
+
 import { splitTextNode } from './foundation/mdast';
 import { type Parenthetical, type Sentence, TextMetadata } from './mdast';
 import { findParentheticalRanges, parseFile, processParagraphs } from './parse';

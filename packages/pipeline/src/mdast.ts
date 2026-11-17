@@ -1,4 +1,5 @@
 import type { Parent, Text, TextData } from 'mdast';
+
 import type { SplitAwareNodeData } from './foundation/mdast';
 
 /** The bracket pair enclosing a parenthetical span: `(...)` or `[...]`. */

@@ -7,6 +7,7 @@ import remarkMath from 'remark-math';
 import { selectAll } from 'unist-util-select';
 import { visitParents } from 'unist-util-visit-parents';
 import type { VFile } from 'vfile';
+
 import * as arrays from './foundation/arrays';
 import * as iterables from './foundation/iterables';
 import { findCommonAncestor, isTextNode, splitTextNode } from './foundation/mdast';
@@ -38,10 +39,10 @@ export async function parseFile(markdownFile: VFile): Promise<Root> {
 function prepareSource(value: Uint8Array | string): string {
   return (
     (value instanceof Uint8Array ? new TextDecoder('utf-8').decode(value) : value)
-      .replace(/\u00a0/gu, ' ')
+      .replaceAll('\u00A0', ' ')
       // Get rid of fancy quotes -- they confuse TTS engines, and are of limited usefulness to
-      .replace(/[“”]/gu, '"')
-      .replace(/[‘’]/gu, "'")
+      .replaceAll(/[“”]/gu, '"')
+      .replaceAll(/[‘’]/gu, "'")
   );
 }
 

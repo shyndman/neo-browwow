@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+
 import { findSentenceDelimiters } from './index';
 
 interface SplitCase {
@@ -216,7 +217,7 @@ const cases: readonly SplitCase[] = [
   },
   {
     name: 'nonbreaking spaces are not word separators',
-    text: 'First.\u00a0Second.',
+    text: 'First.\u00A0Second.',
     offsets: [],
   },
   { name: 'outer whitespace', text: '\t First. \t', offsets: [] },

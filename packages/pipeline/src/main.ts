@@ -1,6 +1,7 @@
 import { read } from 'to-vfile';
 import { inspect } from 'unist-util-inspect';
 import { removePosition } from 'unist-util-remove-position';
+
 import { makeSpeakable } from './pipeline';
 
 const SENTENCE_SPLITTING_URI = new URL('../samples/sentence-splitting.md', import.meta.url);

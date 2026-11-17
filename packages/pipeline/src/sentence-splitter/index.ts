@@ -19,7 +19,7 @@ const sentenceEnd = new RegExp(
 
 // Python regex's Unicode-aware \w includes marks and join controls; JS \w does not.
 const terminalPeriod =
-  /((?:[\p{Alphabetic}\p{Mark}\p{Decimal_Number}\p{Connector_Punctuation}.-]|\u200c|\u200d)*)(['")\]%\p{Final_Punctuation}]*)(\.+)$/u;
+  /((?:[\p{Alphabetic}\p{Mark}\p{Decimal_Number}\p{Connector_Punctuation}.-]|\u200C|\u200D)*)(['")\]%\p{Final_Punctuation}]*)(\.+)$/u;
 const acronymEnding = /\.[\p{Uppercase_Letter}\p{Other_Letter}-]+\.+$/u;
 const sentenceStarter = /^ *['"([¿¡\p{Initial_Punctuation}]* *[\p{Uppercase_Letter}\p{Other_Letter}0-9]/u;
 const numericStarter = /^[0-9]+/u;

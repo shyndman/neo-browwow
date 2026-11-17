@@ -1,6 +1,7 @@
 import type { Parent, Text } from 'mdast';
 import type { Data as UnistData, Node as UnistNode } from 'unist';
 import { u } from 'unist-builder';
+
 import { splitAtIndex } from './strings';
 
 export interface SplitAwareNodeData<TNode extends UnistNode = Text> {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+
 import { RangeMap } from './range-map';
 
 const splitString = (value: string, offset: number): [string, string] => [
@@ -6,13 +7,19 @@ const splitString = (value: string, offset: number): [string, string] => [
   value.slice(offset),
 ];
 
+const splitValue = <T>(value: T): [T, T] => [value, value];
+
+const splitStringValue = (
+  node: { value: string },
+  offset: number,
+): [{ value: string }, { value: string }] => [
+  { value: node.value.slice(0, offset) },
+  { value: node.value.slice(offset) },
+];
+
 describe('RangeMap', () => {
   test('infers lengths from string values and preserves ranges after value mutation', () => {
-    const splitValue = (node: { value: string }, offset: number): [{ value: string }, { value: string }] => [
-      { value: node.value.slice(0, offset) },
-      { value: node.value.slice(offset) },
-    ];
-    const map = new RangeMap(splitValue);
+    const map = new RangeMap(splitStringValue);
     const empty = { value: '' };
     const first = { value: 'ab' };
     const second = { value: 'cde' };
@@ -30,10 +37,6 @@ describe('RangeMap', () => {
   });
 
   test('infers lengths from array values and accepts an explicit override of zero', () => {
-    const splitValue = (node: { value: number[] }): [{ value: number[] }, { value: number[] }] => [
-      node,
-      node,
-    ];
     const map = new RangeMap(splitValue);
     const empty = { value: [1, 2, 3] };
     const first = { value: [4, 5] };
@@ -46,7 +49,6 @@ describe('RangeMap', () => {
   });
 
   test('requires an explicit length for values without value.length', () => {
-    const splitValue = (node: { name: string }): [{ name: string }, { name: string }] => [node, node];
     const map = new RangeMap(splitValue);
     const node = { name: 'first' };
 
@@ -59,7 +61,6 @@ describe('RangeMap', () => {
   });
 
   test('rejects inferred invalid lengths without advancing the next range', () => {
-    const splitValue = (node: { value: { length: number } }): [typeof node, typeof node] => [node, node];
     const map = new RangeMap(splitValue);
     const node = { value: { length: 2 } };
 
@@ -162,7 +163,6 @@ describe('RangeMap', () => {
   });
 
   test('preserves value identity without deriving ranges from mutable values', () => {
-    const splitValue = (value: { name: string }): [{ name: string }, { name: string }] => [value, value];
     const map = new RangeMap(splitValue);
     const first = { name: 'first' };
     const second = { name: 'second' };
@@ -223,7 +223,6 @@ describe('RangeMap.split', () => {
     expect(map.get(2)).toBe('one');
     expect(map.get(3)).toBe('ab');
     expect(map.get(4)).toBe('ab');
-    null;
   });
 
   test('leaves ranges unchanged if the split fails', () => {

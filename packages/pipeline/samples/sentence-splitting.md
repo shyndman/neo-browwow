@@ -6,11 +6,11 @@ First plain sentence. Second plain sentence. Third plain sentence.
 
 ## Repeated splits inside emphasis
 
-Before *First italic sentence. Second italic sentence. Third italic sentence* after.
+Before _First italic sentence. Second italic sentence. Third italic sentence_ after.
 
 ## Splits through three inline ancestors
 
-Outside [link lead **bold lead *First nested sentence. Second nested sentence. Third nested sentence* bold tail** link tail](https://example.com/guide "Preserved link title") outside.
+Outside [link lead **bold lead _First nested sentence. Second nested sentence. Third nested sentence_ bold tail** link tail](https://example.com/guide 'Preserved link title') outside.
 
 ## Paragraphs stay intact
 

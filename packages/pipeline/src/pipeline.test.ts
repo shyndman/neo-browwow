@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test';
+
 import { VFile } from 'vfile';
+
 import { makeSpeakable } from './pipeline';
 
 test('cleaves text leaves in place and attaches sentence and parenthetical spans', async () => {

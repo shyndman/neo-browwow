@@ -3,16 +3,22 @@
   "plugins": ["typescript", "unicorn", "oxc"],
   "categories": {
     "correctness": "error",
-    "suspicious": "warn"
+    "suspicious": "error",
+    "pedantic": "error"
   },
   "rules": {
-    "typescript/no-non-null-assertion": "warn"
+    "typescript/no-non-null-assertion": "error",
+    "eslint/max-lines": ["error", { "max": 500 }],
+    "eslint/max-lines-per-function": ["error", { "max": 55 }],
+    "eslint/no-inline-comments": "off"
   },
   "overrides": [
     {
       "files": ["**/*.test.ts", "**/*.spec.ts"],
       "rules": {
-        "typescript/no-non-null-assertion": "off"
+        "typescript/no-non-null-assertion": "off",
+        "eslint/max-lines": "off",
+        "eslint/max-lines-per-function": "off"
       }
     }
   ],

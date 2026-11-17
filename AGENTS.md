@@ -1,1 +1,1 @@
-* `src/foundation` is a *utilities* library -- not application specific
+- `src/foundation` is a _utilities_ library -- not application specific

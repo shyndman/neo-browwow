@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+
 import { isSorted, isSortedAscending, isSortedDescending, withIsLast } from './iterables';
 
 describe('withIsLast', () => {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+
 import { replace } from './arrays';
 
 describe('replace', () => {
