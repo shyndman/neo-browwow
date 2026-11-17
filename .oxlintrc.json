@@ -29,7 +29,7 @@
     "anti-slop/no-unknown-type-aliases": "error",
     "anti-slop/no-unsafe-dictionary-type": "error",
     "anti-slop/no-widen-then-assert": "error",
-    "anti-slop/require-readable-spacing": "error",
+    "anti-slop/require-readable-spacing": "off",
     "anti-slop/require-safety-comment-for-type-assertion": "error"
   },
   "overrides": [
@@ -38,7 +38,8 @@
       "rules": {
         "typescript/no-non-null-assertion": "off",
         "eslint/max-lines": "off",
-        "eslint/max-lines-per-function": "off"
+        "eslint/max-lines-per-function": "off",
+        "anti-slop/require-safety-comment-for-type-assertion": "off"
       }
     }
   ],

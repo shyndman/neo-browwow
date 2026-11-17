@@ -1,4 +1,4 @@
-import type { Paragraph, Parent, Root, Text } from 'mdast';
+import type { Node, Paragraph, Parent, Root, Text } from 'mdast';
 import { remark } from 'remark';
 import remarkDirective from 'remark-directive';
 import remarkExtendedTable from 'remark-extended-table';
@@ -28,11 +28,11 @@ export async function parseFile(markdownFile: VFile): Promise<Root> {
     // We have Marker configured to emit captions as directive blocks
     .use(remarkDirective);
 
-  let tree = parser.parse(source);
-  tree = (await parser.run(tree)) as Root;
+  const tree = parser.parse(source);
+  const transformedTree = await parser.run(tree);
 
   // Identify parts of text important to its pronunciation
-  processParagraphs(tree);
+  processParagraphs(transformedTree);
   return tree;
 }
 
@@ -66,8 +66,9 @@ interface ParagraphContext {
  * Processes every paragraph in the tree in a single per-paragraph pass,
  * cleaving text leaves and attaching `Parenthetical` and `Sentence` spans.
  */
-export function processParagraphs(tree: Root): void {
+export function processParagraphs(tree: Node): void {
   for (const node of selectAll('paragraph', tree)) {
+    // SAFETY: The selectAll() above ensures that the node is indeed a Paragraph.
     const ctx = createParagraphContext(node as Paragraph);
     if (ctx.paragraphText.length === 0) {
       console.debug('Skipping paragraph with no text nodes');
@@ -196,12 +197,17 @@ export function* findParentheticalRanges(
   }
 }
 
+type HierarchicalParentheticalRange = {
+  range: ParentheticalRange;
+  isTopLevel: boolean;
+};
+
 function closeParentheticalRange(
   openStack: ParentheticalRange[],
   char: ')' | ']',
   index: number,
   text: string,
-): { range: ParentheticalRange; isTopLevel: boolean } {
+): HierarchicalParentheticalRange {
   const expectedKind: ParentheticalKind = char === ')' ? 'round' : 'square';
   const openRange = openStack.pop();
 

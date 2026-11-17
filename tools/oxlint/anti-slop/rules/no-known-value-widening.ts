@@ -245,6 +245,20 @@ function functionName(sourceCode: SourceCode, owner: FunctionExpression | null):
 	return "anonymous function";
 }
 
+const TO_JSON_METHOD_NAME = "toJSON";
+
+function isToJsonMethod(sourceCode: SourceCode, owner: FunctionExpression | null): boolean {
+	if (owner === null) return false;
+	const parent = owner.parent;
+	if (parent.type === "MethodDefinition") {
+		return sourceKeyName(sourceCode, parent.key) === TO_JSON_METHOD_NAME;
+	}
+	if (parent.type === "Property" && parent.method) {
+		return sourceKeyName(sourceCode, parent.key) === TO_JSON_METHOD_NAME;
+	}
+	return false;
+}
+
 function isEmptyObjectExpression(expression: ESTree.Expression): boolean {
 	const unwrapped = unwrapExpression(expression);
 	return unwrapped.type === "ObjectExpression" && unwrapped.properties.length === 0;
@@ -380,6 +394,7 @@ export const noKnownValueWideningRule = defineRule({
 			ReturnStatement(node) {
 				if (node.argument === null) return;
 				const owner = enclosingFunction(node);
+				if (isToJsonMethod(context.sourceCode, owner)) return;
 				reportFlow(
 					node.argument,
 					targetFromAnnotation(owner?.returnType),

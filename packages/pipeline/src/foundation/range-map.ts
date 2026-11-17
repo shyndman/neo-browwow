@@ -25,6 +25,7 @@ export class RangeMap<T> {
    */
   append(value: T & ValueWithLength): void;
   append(value: T, length: number): void;
+  // SAFETY: Guaranteed by type annotations
   append(value: T, length: number = (value as T & ValueWithLength).value.length): void {
     const last = this.entries.at(-1);
     const start = last === undefined ? 0 : last.start + last.length;
@@ -100,7 +101,7 @@ export class RangeMap<T> {
 
     while (low <= high) {
       const middle = low + Math.floor((high - low) / 2);
-      // The search bounds keep middle within the entries array.
+      // SAFETY: The search bounds keep middle within the entries array.
       const entry = this.entries[middle] as RangeEntry<T>;
 
       if (index < entry.start) {
