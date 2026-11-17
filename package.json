@@ -1,0 +1,21 @@
+{
+	"name": "neo-browwow",
+	"private": true,
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"test": "bun run --filter '*' test",
+		"ts-check": "bun run --filter '*' ts-check",
+		"build": "bun run --filter '*' build",
+		"fmt": "oxfmt --write .",
+		"fmt:check": "oxfmt --check .",
+		"lint": "oxlint --deny-warnings ."
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"oxfmt": "latest",
+		"oxlint": "latest",
+		"typescript": "^7.0.2"
+	}
+}

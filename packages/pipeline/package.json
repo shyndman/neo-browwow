@@ -1,0 +1,50 @@
+{
+	"name": "@browwow/pipeline",
+	"version": "1.0.0",
+	"type": "module",
+	"description": "Document processing pipeline.",
+	"scripts": {
+		"dev:main": "bun run --hot ./src/main.ts",
+		"dev:lib": "bun run --hot ./src/index.ts",
+		"test": "bun test src/ --coverage",
+		"ts-check": "tsc --noEmit",
+		"build": "bunup"
+	},
+	"devDependencies": {
+		"@types/hast": "^3.0.5",
+		"@types/mdast": "^4.0.4",
+		"@types/unist": "^3.0.3",
+		"bunup": "latest"
+	},
+	"module": "./src/index.ts",
+	"types": "./src/index.ts",
+	"files": [
+		"./dist"
+	],
+	"dependencies": {
+		"@accuser/unist-util-flatmap": "^1.0.2",
+		"css-selector-parser": "^3.3.0",
+		"hast-util-to-mdast": "^10.1.2",
+		"mdast": "^3.0.0",
+		"mdast-util-to-string": "^4.0.0",
+		"rehype-parse": "^9.0.1",
+		"remark": "^15.0.1",
+		"remark-directive": "^4.0.0",
+		"remark-extended-table": "^2.0.3",
+		"remark-gfm": "^4.0.1",
+		"remark-math": "^6.0.0",
+		"stringify-entities": "^4.0.4",
+		"to-vfile": "^8.0.0",
+		"unified": "^11.0.5",
+		"unist": "^0.0.1",
+		"unist-builder": "^4.0.0",
+		"unist-util-inspect": "^8.1.0",
+		"unist-util-map": "^4.0.0",
+		"unist-util-remove-position": "^5.0.0",
+		"unist-util-select": "^5.1.0",
+		"unist-util-visit": "^5.2.0",
+		"unist-util-visit-parents": "^6.1.0",
+		"vfile": "^6.0.3",
+		"vfile-location": "^5.0.3"
+	}
+}
