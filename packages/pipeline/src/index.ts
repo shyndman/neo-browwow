@@ -1,6 +1,9 @@
+export { classifyDocument } from './classify/index';
 export {
+  type DocumentType,
   type Parenthetical,
   type ParentheticalKind,
+  RootMetadata,
   type Sentence,
   TextMetadata,
   type TextSpan,

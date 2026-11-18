@@ -1,3 +1,4 @@
+import { getLogger } from '@logtape/logtape';
 import type { Node, Paragraph, Parent, Root, Text } from 'mdast';
 import { remark } from 'remark';
 import remarkDirective from 'remark-directive';
@@ -17,15 +18,23 @@ import * as strings from './foundation/strings';
 import { type ParentheticalKind, TextMetadata, type TextSpan } from './mdast';
 import { findSentenceDelimiters } from './sentence-splitter/index';
 
+const logger = getLogger(['browwow', 'pipeline', 'parse']);
+
 export async function parseFile(markdownFile: VFile): Promise<Root> {
   const source = prepareSource(markdownFile.value);
+
+  const sourceLabel = markdownFile.path || '<inline>';
+
+  logger.debug('Parsing Markdown source {source} ({charCount} chars).', {
+    source: sourceLabel,
+    charCount: source.length,
+  });
 
   const parser = remark()
     .use(remarkMath)
     .use(remarkGfm)
     // For colspan and rowspan support
     .use(remarkExtendedTable)
-    // We have Marker configured to emit captions as directive blocks
     .use(remarkDirective);
 
   const tree = parser.parse(source);
@@ -33,6 +42,12 @@ export async function parseFile(markdownFile: VFile): Promise<Root> {
 
   // Identify parts of text important to its pronunciation
   processParagraphs(transformedTree);
+
+  logger.info('Parsed Markdown tree for {source} ({childCount} root children).', {
+    source: sourceLabel,
+    childCount: tree.children.length,
+  });
+
   return tree;
 }
 

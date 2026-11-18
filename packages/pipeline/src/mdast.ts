@@ -1,6 +1,9 @@
-import type { Parent, Text, TextData } from 'mdast';
+import type { Parent, Root, RootData, Text, TextData } from 'mdast';
 
 import type { SplitAwareNodeData } from './foundation/mdast';
+
+/** Editorial form of a document governing how its sections and inline elements are spoken aloud. */
+export type DocumentType = 'research_paper' | 'blog_post' | 'encyclopedia_entry' | 'news_article' | 'other';
 
 /** The bracket pair enclosing a parenthetical span: `(...)` or `[...]`. */
 export type ParentheticalKind = 'round' | 'square';
@@ -98,9 +101,7 @@ export class TextMetadata implements TextData {
       return node.data;
     }
 
-    const metadata = new TextMetadata();
-    node.data = metadata;
-    return metadata;
+    return (node.data = new TextMetadata());
   }
 
   static attach(span: TextSpan): void {
@@ -134,7 +135,34 @@ export class TextMetadata implements TextData {
   }
 }
 
+/**
+ * Document-level metadata attached to `root.data` once the document's
+ * {@link DocumentType} has been classified.
+ */
+export class RootMetadata implements RootData {
+  readonly documentType: DocumentType;
+
+  constructor(documentType: DocumentType) {
+    this.documentType = documentType;
+  }
+
+  static attach(root: Root, documentType: DocumentType): RootMetadata {
+    const metadata = new RootMetadata(documentType);
+
+    root.data = metadata;
+    return metadata;
+  }
+
+  toJSON(): { documentType: DocumentType } {
+    return { documentType: this.documentType };
+  }
+}
+
 declare module 'mdast' {
+  interface RootData {
+    readonly documentType: DocumentType;
+  }
+
   interface TextData extends SplitAwareNodeData<Text> {
     readonly starts: TextSpan[];
     readonly ends: TextSpan[];
