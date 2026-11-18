@@ -5,7 +5,7 @@ import { VFile } from 'vfile';
 
 import { splitTextNode } from './foundation/mdast';
 import { type Parenthetical, type Sentence, TextMetadata } from './mdast';
-import { findParentheticalRanges, parseFile, processParagraphs } from './parse';
+import { parseFile, processParagraphs } from './parse';
 
 test('cleaves text leaves in place without cleaving inline ancestors and attaches sentence spans', () => {
   const prefix: Text = { type: 'text', value: 'Intro ' };
@@ -247,15 +247,38 @@ describe('findParentheticalRanges and tagParentheticals', () => {
     });
   });
 
-  test.each([
-    { name: 'unmatched closing round', input: 'Text with stray ) here.' },
-    { name: 'unmatched closing square', input: 'Text with stray ] here.' },
-    { name: 'crossed round-square', input: 'Crossed ([brackets)] here.' },
-    { name: 'crossed square-round', input: 'Crossed [(brackets]) here.' },
-    { name: 'unclosed opening round', input: 'Unclosed (bracket here.' },
-    { name: 'unclosed opening square', input: 'Unclosed [bracket here.' },
-  ])('throws on $name brackets', ({ input }) => {
-    expect(() => Array.from(findParentheticalRanges(input))).toThrow();
+  test('preserves closed inner parentheticals and sentence splits when outer brackets are crossed or unclosed', async () => {
+    const tree = await parseFile(
+      new VFile(
+        'See 1) intro (crossed [see Smith, 2020. Also Jones, 2021]broken] and (unclosed [cf. Lee, 2022. And Kim, 2023] end.',
+      ),
+    );
+    const paragraph = tree.children[0] as Paragraph;
+    const leaves = paragraph.children as Text[];
+
+    expect(leaves.map((l) => l.value)).toEqual([
+      'See 1) intro (crossed ',
+      '[see Smith, 2020.',
+      ' Also Jones, 2021]',
+      'broken] and (unclosed ',
+      '[cf. Lee, 2022.',
+      ' And Kim, 2023]',
+      ' end.',
+    ]);
+
+    // Host sentence remains a single sentence across the promoted inner parentheticals.
+    const hostSentence = leaves[0]?.data?.starts[0] as Sentence;
+    expect(hostSentence.text).toBe(
+      'See 1) intro (crossed [see Smith, 2020. Also Jones, 2021]broken] and (unclosed [cf. Lee, 2022. And Kim, 2023] end.',
+    );
+    expect(leaves[6]?.data?.ends).toEqual([hostSentence]);
+
+    // Both closed inner square parentheticals are preserved along with their internal sentence splits.
+    const firstParen = leaves[1]?.data?.starts.find((s) => s.type === 'parenthetical') as Parenthetical;
+    expect(firstParen.text).toBe('[see Smith, 2020. Also Jones, 2021]');
+
+    const secondParen = leaves[4]?.data?.starts.find((s) => s.type === 'parenthetical') as Parenthetical;
+    expect(secondParen.text).toBe('[cf. Lee, 2022. And Kim, 2023]');
   });
 });
 

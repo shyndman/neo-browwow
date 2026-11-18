@@ -29,9 +29,10 @@ await configure({
 
 const logger = getLogger(['browwow', 'pipeline', 'main']);
 
-const SENTENCE_SPLITTING_URI = new URL('../samples/advancing_sustainability_science.md', import.meta.url);
-
-console.log(process.env);
+const SENTENCE_SPLITTING_URI = new URL(
+  '../samples/advancing_sustainability_science-short.md',
+  import.meta.url,
+);
 const file = await read(SENTENCE_SPLITTING_URI, { encoding: 'utf-8' });
 const decisionModel = createTypeSafeAi({
   apiKey: process.env.LLAMA_BEARER_TOKEN,
