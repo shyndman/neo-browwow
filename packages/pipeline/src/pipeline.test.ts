@@ -5,7 +5,7 @@ import { VFile } from 'vfile';
 
 import { makeSpeakable } from './pipeline';
 
-test('cleaves text leaves in place, attaches spans, and classifies document type on root', async () => {
+test('splits text leaves in place, attaches spans, and classifies document type on root', async () => {
   const model = new Experimental_DecisionMockModelV4({
     modelId: 'jev-test',
     doDecide: () =>

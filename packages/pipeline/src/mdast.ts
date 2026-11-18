@@ -48,14 +48,14 @@ export type TextSpan = Sentence | Parenthetical;
  * Split-aware endpoint metadata attached to `node.data` on the `start` and `end`
  * `Text` leaves of each {@link TextSpan} (`Sentence` or `Parenthetical`).
  *
- * Rather than inserting custom wrapper nodes around spans — which would cleave
+ * Rather than inserting custom wrapper nodes around spans — which would split
  * straddling inline formatting such as `emphasis`, `strong`, or `link` — the
- * pipeline cleaves only `Text` leaves at span boundaries and records span
+ * pipeline splits only `Text` leaves at span boundaries and records span
  * membership here via {@link TextMetadata.attach}. Interior `Text` leaves and
  * non-text inline nodes carry no `TextMetadata`.
  *
- * When a tagged `Text` leaf is later cleaved into `[left, right]` (for example,
- * when sentence splitting cleaves a leaf already tagged by parenthetical
+ * When a tagged `Text` leaf is later split into `[left, right]` (for example,
+ * when sentence splitting splits a leaf already tagged by parenthetical
  * extraction), {@link onSplit} migrates `starts` (and updates `span.start`) to
  * `left`, and migrates `ends` (and updates `span.end`) to `right`, while leaving
  * `span.commonAncestor` unchanged.
@@ -68,7 +68,7 @@ export type TextSpan = Sentence | Parenthetical;
  *
  * @example
  * Given `"We use Adam (see Kingma, 2015. Compare Loshchilov, 2019) for all runs."`,
- * the paragraph's `Text` leaves are cleaved into four nodes whose `data` holds:
+ * the paragraph's `Text` leaves are split into four nodes whose `data` holds:
  * ```text
  * "We use Adam "              -> starts: [hostSentence]
  * "(see Kingma, 2015."         -> starts: [parenthetical, innerSentence1], ends: [innerSentence1]

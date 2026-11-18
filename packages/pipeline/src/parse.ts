@@ -71,96 +71,157 @@ function prepareSource(value: Uint8Array | string): string {
 }
 
 /**
- * Bridges a paragraph's nested inline AST (`emphasis`, `strong`, `link`, etc.)
- * and flat character-offset scanners. Maps offsets in `paragraphText` back to
- * their owning `Text` leaves and AST ancestor chains as leaves are cleaved.
+ * Pairs a `Text` leaf with its root-to-parent AST ancestor chain inside a
+ * paragraph's `RangeMap`.
+ */
+interface ParagraphLeaf {
+  node: Text;
+  ancestors: readonly Parent[];
+}
+
+/**
+ * Pairs a paragraph's flattened plain text (`paragraphText`) with the
+ * `RangeMap` indexing its underlying AST `Text` leaves and ancestor chains.
  */
 interface ParagraphContext {
-  paragraph: Paragraph;
   paragraphText: string;
-  leafTextRanges: RangeMap<Text>;
-  ancestorsByText: Map<Text, Parent[]>;
+  leafRanges: RangeMap<ParagraphLeaf>;
 }
 
 /**
  * Annotates every paragraph in `tree` with `Parenthetical` and `Sentence`
- * endpoint metadata by cleaving `Text` leaves in place at span boundaries.
- * Parentheticals are extracted first so their bounds prevent internal periods
- * from breaking the enclosing host sentence.
+ * endpoint metadata by splitting `Text` leaves in place at span boundaries.
+ *
+ * Parenthetical and sentence scanners operate on a flat plain-text string
+ * (`[startIndex, endIndex)` character offsets), while speech preparation needs
+ * those spans attached to `Text` leaves inside a nested Markdown paragraph
+ * (`emphasis`, `strong`, `link`) without splitting formatting nodes. Each
+ * paragraph indexes its `Text` leaves in a `RangeMap<ParagraphLeaf>`, splits
+ * the boundary leaves at each span's start and end offsets, and attaches the
+ * resulting `TextSpan` to `start` and `end`.
  */
-export function processParagraphs(tree: Node): void {
-  for (const node of selectAll('paragraph', tree)) {
+function processParagraphs(tree: Node): void {
+  const paragraphs = selectAll('paragraph', tree);
+  let parentheticalCount = 0;
+  let sentenceCount = 0;
+
+  for (const node of paragraphs) {
     // SAFETY: The selectAll() above ensures that the node is indeed a Paragraph.
-    const ctx = createParagraphContext(node as Paragraph);
-    if (ctx.paragraphText.length > 0) {
-      const parentheticalRanges = attachParagraphParentheticals(ctx);
-      attachParagraphSentences(ctx, parentheticalRanges);
+    const ctx = indexParagraph(node as Paragraph);
+    if (ctx.paragraphText.length === 0) {
+      logger.debug('Skipping paragraph with no text leaves.');
+      continue;
+    }
+
+    const parentheticalRanges = Array.from(findParentheticalRanges(ctx.paragraphText));
+    for (const range of parentheticalRanges) {
+      TextMetadata.attach({
+        type: 'parenthetical',
+        kind: range.kind,
+        ...splitSpan(ctx, range),
+      });
+      parentheticalCount += 1;
+    }
+
+    for (const range of findSentenceRanges(ctx.paragraphText, parentheticalRanges)) {
+      TextMetadata.attach({
+        type: 'sentence',
+        ...splitSpan(ctx, range),
+      });
+      sentenceCount += 1;
     }
   }
+
+  logger.debug(
+    'Annotated {paragraphCount} paragraph(s) with {parentheticalCount} parenthetical and {sentenceCount} sentence span(s).',
+    {
+      paragraphCount: paragraphs.length,
+      parentheticalCount,
+      sentenceCount,
+    },
+  );
 }
 
 /**
  * Flattens all `Text` leaves under `paragraph` into a single contiguous string
- * (`paragraphText`) while indexing each leaf's character range in `leafTextRanges`
- * and recording its root-to-parent ancestor chain in `ancestorsByText`.
- *
- * This lets parenthetical and sentence finders work on plain string indices
- * while span attachment maps those indices back to the underlying AST nodes.
+ * (`paragraphText`) while indexing each leaf and its AST ancestor chain in `leafRanges`.
  */
-function createParagraphContext(paragraph: Paragraph): ParagraphContext {
+function indexParagraph(paragraph: Paragraph): ParagraphContext {
   let paragraphText = '';
-  const leafTextRanges = new RangeMap<Text>(splitTextNode);
-  const ancestorsByText = new Map<Text, Parent[]>();
+  let leafCount = 0;
+  const leafRanges = new RangeMap<ParagraphLeaf>(splitParagraphLeaf);
 
   visitParents(paragraph, isTextNode, (node, ancestors) => {
-    leafTextRanges.append(node);
+    leafRanges.append({ node, ancestors }, node.value.length);
     paragraphText += node.value;
-    ancestorsByText.set(node, ancestors);
+    leafCount += 1;
   });
 
-  return { paragraph, paragraphText, leafTextRanges, ancestorsByText };
+  logger.debug('Indexed paragraph ({charCount} chars across {leafCount} text leaves).', {
+    charCount: paragraphText.length,
+    leafCount,
+  });
+
+  return { paragraphText, leafRanges };
 }
 
 /**
- * Finds balanced `(...)` and `[...]` ranges in the paragraph's plain text,
- * cleaves the AST `Text` leaves at each bracket's start and end offsets, and
- * attaches a `Parenthetical` span to those boundary leaves. Returns the ranges
- * in innermost-first order so sentence splitting can isolate inner delimiters.
+ * Splits a `ParagraphLeaf` at `offset` into two sibling `Text` leaves in its
+ * parent's `children` array (migrating any existing `TextMetadata` endpoints)
+ * and returns the two new `ParagraphLeaf` records sharing the same ancestor chain.
  */
-function attachParagraphParentheticals(ctx: ParagraphContext): ParentheticalRange[] {
-  const ranges = Array.from(findParentheticalRanges(ctx.paragraphText));
-  for (const range of ranges) {
-    splitAndAttachSpan(ctx, range, (commonAncestor, start, end, text) => ({
-      type: 'parenthetical',
-      kind: range.kind,
-      commonAncestor,
-      start,
-      end,
-      text,
-    }));
+function splitParagraphLeaf(leaf: ParagraphLeaf, offset: number): [ParagraphLeaf, ParagraphLeaf] {
+  const parent = leaf.ancestors.at(-1);
+  if (parent === undefined) {
+    throw new Error("Illegal state encountered. Expected to find leaf text in its parent's children.", {
+      cause: { offset, leaf },
+    });
   }
 
-  return ranges;
+  const [leftNode, rightNode] = splitTextNode(leaf.node, offset);
+  arrays.replace(parent.children, leaf.node, leftNode, rightNode);
+
+  logger.debug('Split text leaf at offset {offset} into "{leftText}" and "{rightText}".', {
+    offset,
+    leftText: leftNode.value,
+    rightText: rightNode.value,
+  });
+
+  return [
+    { node: leftNode, ancestors: leaf.ancestors },
+    { node: rightNode, ancestors: leaf.ancestors },
+  ];
 }
 
 /**
- * Cleaves the paragraph's AST `Text` leaves at every sentence boundary — both
- * outer host sentences and inner sentences inside multi-sentence parentheticals —
- * and attaches a `Sentence` span to each sentence's start and end leaves.
+ * Projects a plain-text character `range` onto `ctx.leafRanges` — splitting the
+ * `Text` leaves at `range.endIndex` and `range.startIndex` so the span lands
+ * on exact leaf boundaries — and returns the span's `commonAncestor`, `start`,
+ * `end`, and `text`.
  */
-function attachParagraphSentences(
-  ctx: ParagraphContext,
-  parentheticalRanges: readonly ParentheticalRange[],
-): void {
-  for (const range of findSentenceRanges(ctx.paragraphText, parentheticalRanges)) {
-    splitAndAttachSpan(ctx, range, (commonAncestor, start, end, text) => ({
-      type: 'sentence',
-      commonAncestor,
-      start,
-      end,
-      text,
-    }));
+function splitSpan(ctx: ParagraphContext, range: TextRange): Omit<TextSpan, 'type'> {
+  if (range.endIndex < ctx.paragraphText.length) {
+    ctx.leafRanges.split(range.endIndex);
   }
+
+  const [, startLeaf] = ctx.leafRanges.split(range.startIndex);
+  const endLeaf = ctx.leafRanges.get(range.endIndex - 1);
+  const commonAncestor = findCommonAncestor(startLeaf.ancestors, endLeaf.ancestors);
+  const text = ctx.paragraphText.slice(range.startIndex, range.endIndex);
+
+  logger.debug('Resolved span [{startIndex}, {endIndex}) under {commonAncestorType}: "{text}".', {
+    startIndex: range.startIndex,
+    endIndex: range.endIndex,
+    commonAncestorType: commonAncestor.type,
+    text,
+  });
+
+  return {
+    commonAncestor,
+    start: startLeaf.node,
+    end: endLeaf.node,
+    text,
+  };
 }
 
 /**
@@ -179,10 +240,28 @@ function* findSentenceRanges(
 ): Generator<TextRange, void, undefined> {
   let remainingSplits = Array.from(findSentenceDelimiters(paragraphText));
 
+  logger.debug(
+    'Found {delimiterCount} sentence delimiter(s) across {parentheticalCount} parenthetical range(s).',
+    {
+      delimiterCount: remainingSplits.length,
+      parentheticalCount: parentheticalRanges.length,
+    },
+  );
+
   for (const range of parentheticalRanges) {
     const innerSplits = remainingSplits.filter((split) => split > range.startIndex && split < range.endIndex);
 
     if (innerSplits.length > 0) {
+      logger.debug(
+        'Partitioning {kind} parenthetical [{startIndex}, {endIndex}) across {innerSplitCount} inner sentence delimiter(s).',
+        {
+          kind: range.kind,
+          startIndex: range.startIndex,
+          endIndex: range.endIndex,
+          innerSplitCount: innerSplits.length,
+        },
+      );
+
       remainingSplits = remainingSplits.filter(
         (split) => split <= range.startIndex || split >= range.endIndex,
       );
@@ -206,78 +285,4 @@ function* splitRangeAt(
   for (const [spanStart, spanEnd] of iterables.pairs(boundaries)) {
     yield { startIndex: spanStart, endIndex: spanEnd };
   }
-}
-
-/**
- * Projects a plain-text character `range` back onto the paragraph's AST `Text`
- * leaves and attaches the `TextSpan` produced by `createSpan` to its boundary
- * leaves (`start` and `end`).
- *
- * Cleaves the leaf at `range.endIndex` first and `range.startIndex` second so
- * the span's start and end land on exact `Text` node boundaries without
- * cleaving enclosing formatting nodes (`emphasis`, `strong`, `link`).
- */
-function splitAndAttachSpan(
-  ctx: ParagraphContext,
-  range: TextRange,
-  createSpan: (commonAncestor: Parent, start: Text, end: Text, text: string) => TextSpan,
-): void {
-  if (range.endIndex < ctx.paragraphText.length) {
-    splitParagraphAt(ctx, range.endIndex);
-  }
-
-  const [, startText] = splitParagraphAt(ctx, range.startIndex);
-  const endText = ctx.leafTextRanges.get(range.endIndex - 1);
-  const commonAncestor = resolveCommonAncestor(ctx.ancestorsByText, startText, endText);
-  const text = ctx.paragraphText.slice(range.startIndex, range.endIndex);
-
-  TextMetadata.attach(createSpan(commonAncestor, startText, endText, text));
-}
-
-/**
- * Ensures a `Text` leaf boundary exists at `splitIndex` in `paragraphText`.
- *
- * If `splitIndex` falls inside a `Text` leaf, cleaves that leaf into `[left, right]`
- * in both `leafTextRanges` and its parent's `children` array (migrating any
- * existing `TextMetadata` endpoints via `onSplit`) and records the same
- * ancestor chain for both new halves. If `splitIndex` already aligns with the
- * start of a leaf, returns `[null, right]` without mutating the tree.
- */
-function splitParagraphAt(ctx: ParagraphContext, splitIndex: number): [Text | null, Text] {
-  const nodeAtIndex = ctx.leafTextRanges.get(splitIndex);
-
-  const [left, right] = ctx.leafTextRanges.split(splitIndex);
-  if (left === null) {
-    return [null, right];
-  }
-
-  const ancestors = ctx.ancestorsByText.get(nodeAtIndex);
-  const parent = ancestors?.at(-1);
-  if (ancestors === undefined || parent === undefined) {
-    throw new Error("Illegal state encountered. Expected to find leaf text in its parent's children.", {
-      cause: { splitIndex, nodeAtIndex },
-    });
-  }
-
-  arrays.replace(parent.children, nodeAtIndex, left, right);
-  ctx.ancestorsByText.set(left, ancestors);
-  ctx.ancestorsByText.set(right, ancestors);
-  return [left, right];
-}
-
-/**
- * Looks up the root-to-parent ancestor chains for a span's `startText` and
- * `endText` leaves and returns their deepest shared `Parent` node in the AST.
- */
-function resolveCommonAncestor(ancestorsByText: Map<Text, Parent[]>, startText: Text, endText: Text): Parent {
-  const startAncestors = ancestorsByText.get(startText);
-  const endAncestors = ancestorsByText.get(endText);
-
-  if (startAncestors === undefined || endAncestors === undefined) {
-    throw new Error('Expected to find ancestors for boundary text node', {
-      cause: { startText, endText },
-    });
-  }
-
-  return findCommonAncestor(startAncestors, endAncestors);
 }

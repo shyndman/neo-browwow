@@ -4,9 +4,9 @@ Transforms extracted document Markdown into a structured syntax tree for speech 
 
 ## Language
 
-**Cleave**:
+**Split**:
 Splitting a syntax node at a character boundary into two sibling nodes so each side falls cleanly within a text span boundary.
-_Avoid_: Slice, chop, partition
+_Avoid_: Cleave, slice, chop, partition
 
 **Straddling Node**:
 An inline syntax node whose content crosses a boundary of a text span, such as a formatting node spanning across a sentence or parenthetical boundary.

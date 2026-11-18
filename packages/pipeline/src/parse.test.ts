@@ -1,47 +1,33 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Emphasis, Image, InlineCode, Link, Paragraph, Root, Strong, Text } from 'mdast';
+import type { Blockquote, Emphasis, Link, Paragraph, Strong, Text } from 'mdast';
 import { VFile } from 'vfile';
 
 import { splitTextNode } from './foundation/mdast';
 import { type Parenthetical, type Sentence, TextMetadata } from './mdast';
-import { parseFile, processParagraphs } from './parse';
+import { parseFile } from './parse';
 
-test('cleaves text leaves in place without cleaving inline ancestors and attaches sentence spans', () => {
-  const prefix: Text = { type: 'text', value: 'Intro ' };
-  const before: Text = { type: 'text', value: 'Before ' };
-  const after: Text = { type: 'text', value: ' after' };
-  const suffix: Text = { type: 'text', value: ' tail' };
-  const code: InlineCode = { type: 'inlineCode', value: 'code' };
-  const image: Image = { type: 'image', url: '/image.png', alt: 'image' };
-  const strong: Strong = {
-    type: 'strong',
-    children: [code, { type: 'text', value: 'First. Second. Third' }, image],
-  };
-  const link: Link = {
-    type: 'link',
-    url: 'https://example.com',
-    title: 'Link title',
-    data: { hProperties: { className: ['link'] } },
-    children: [before, strong, after],
-  };
-  const paragraph: Paragraph = {
-    type: 'paragraph',
-    children: [prefix, link, suffix],
-  };
-  const untouchedText: Text = { type: 'text', value: 'Unchanged' };
-  const untouched: Paragraph = {
-    type: 'paragraph',
-    children: [untouchedText],
-  };
-  const tree: Root = {
-    type: 'root',
-    children: [{ type: 'blockquote', children: [paragraph, untouched] }],
-  };
+test('splits text leaves in place without splitting inline ancestors and attaches sentence spans', async () => {
+  const tree = await parseFile(
+    new VFile(
+      '> Intro [Before **`code`First. Second. Third![image](/image.png)** after](https://example.com "Link title") tail\n>\n> Unchanged',
+    ),
+  );
 
-  processParagraphs(tree);
+  const blockquote = tree.children[0] as Blockquote;
+  const paragraph = blockquote.children[0] as Paragraph;
+  const untouched = blockquote.children[1] as Paragraph;
 
-  // Formatting ancestors (link, strong) remain intact; only the inner text leaf was cleaved.
+  const prefix = paragraph.children[0] as Text;
+  const link = paragraph.children[1] as Link;
+  const suffix = paragraph.children[2] as Text;
+
+  const before = link.children[0] as Text;
+  const strong = link.children[1] as Strong;
+  const after = link.children[2] as Text;
+  const untouchedText = untouched.children[0] as Text;
+
+  // Formatting ancestors (link, strong) remain intact; only the inner text leaf was split.
   expect(paragraph.children).toEqual([prefix, link, suffix]);
   expect(link.children).toEqual([before, strong, after]);
   expect(strong.children).toHaveLength(5);
@@ -54,7 +40,7 @@ test('cleaves text leaves in place without cleaving inline ancestors and attache
   expect(secondLeaf.value).toBe(' Second.');
   expect(thirdLeaf.value).toBe(' Third');
 
-  // Interior leaf `before` has no boundary metadata.
+  // Interior leaves `before` and `after` have no boundary metadata.
   expect(before.data).toBeUndefined();
   expect(after.data).toBeUndefined();
 
@@ -98,21 +84,11 @@ test('cleaves text leaves in place without cleaving inline ancestors and attache
   });
 });
 
-test('leaves paragraphs with no text nodes unchanged', () => {
-  const image: Image = { type: 'image', url: '/diagram.png', alt: 'diagram' };
-  const code: InlineCode = { type: 'inlineCode', value: 'x = 1' };
-  const paragraph: Paragraph = {
-    type: 'paragraph',
-    children: [image, code],
-  };
-  const tree: Root = {
-    type: 'root',
-    children: [paragraph],
-  };
+test('leaves paragraphs with no text nodes unchanged', async () => {
+  const tree = await parseFile(new VFile('![diagram](/diagram.png)`x = 1`'));
+  const paragraph = tree.children[0] as Paragraph;
 
-  processParagraphs(tree);
-
-  expect(paragraph.children).toEqual([image, code]);
+  expect(paragraph.children.map((child) => child.type)).toEqual(['image', 'inlineCode']);
 });
 
 describe('TextMetadata.onSplit', () => {
@@ -152,12 +128,9 @@ describe('TextMetadata.onSplit', () => {
 });
 
 describe('findParentheticalRanges and tagParentheticals', () => {
-  test('tags single-leaf round and square parentheticals with start === end', () => {
-    const text: Text = { type: 'text', value: 'We use Adam (Kingma, 2015) and SGD [1, 2] here.' };
-    const paragraph: Paragraph = { type: 'paragraph', children: [text] };
-    const tree: Root = { type: 'root', children: [paragraph] };
-
-    processParagraphs(tree);
+  test('tags single-leaf round and square parentheticals with start === end', async () => {
+    const tree = await parseFile(new VFile('We use Adam (Kingma, 2015) and SGD [1, 2] here.'));
+    const paragraph = tree.children[0] as Paragraph;
 
     expect(paragraph.children.map((child) => (child as Text).value)).toEqual([
       'We use Adam ',
@@ -193,23 +166,14 @@ describe('findParentheticalRanges and tagParentheticals', () => {
     expect(squareLeaf.data?.ends).toEqual([squareSpan]);
   });
 
-  test('handles nested, empty, and formatting-straddling parentheticals without cleaving formatting', () => {
-    const emLead: Text = { type: 'text', value: 'Adam (trained on [ImageNet] ' };
-    const emphasis: Emphasis = { type: 'emphasis', children: [emLead] };
-    const tail: Text = { type: 'text', value: 'for 90 epochs) and ()' };
-    const paragraph: Paragraph = { type: 'paragraph', children: [emphasis, tail] };
-    const tree: Root = { type: 'root', children: [paragraph] };
+  test('handles nested, empty, and formatting-straddling parentheticals without splitting formatting', async () => {
+    const tree = await parseFile(new VFile('*Adam (trained on [ImageNet]* for 90 epochs) and ()'));
+    const paragraph = tree.children[0] as Paragraph;
+    const emphasis = paragraph.children[0] as Emphasis;
 
-    processParagraphs(tree);
-
-    // Emphasis stays intact as a single node; only its text leaf was cleaved.
-    expect(paragraph.children[0]).toBe(emphasis);
-    expect(emphasis.children.map((c) => (c as Text).value)).toEqual([
-      'Adam ',
-      '(trained on ',
-      '[ImageNet]',
-      ' ',
-    ]);
+    // Emphasis stays intact as a single node; only its text leaf was split.
+    expect(emphasis.type).toBe('emphasis');
+    expect(emphasis.children.map((c) => (c as Text).value)).toEqual(['Adam ', '(trained on ', '[ImageNet]']);
 
     const outerStart = emphasis.children[1] as Text;
     const innerLeaf = emphasis.children[2] as Text;
@@ -308,7 +272,7 @@ describe('parseFile parenthetical and sentence integration', () => {
     });
     expect(leaves[3]?.data?.ends).toEqual([hostSentence]);
 
-    // Parenthetical endpoints updated automatically via onSplit when leaves[1..2] cleaved.
+    // Parenthetical endpoints updated automatically via onSplit when leaves[1..2] split.
     const parenthetical = leaves[1]?.data?.starts.find((s) => s.type === 'parenthetical') as Parenthetical;
     expect(parenthetical).toEqual({
       type: 'parenthetical',
