@@ -37,3 +37,10 @@ export function plural(countable: { length: number }, singular: string, pluralFo
   }
   return pluralForm ?? `${singular}s`;
 }
+
+/**
+ * Splits `str` into non-whitespace words.
+ */
+export function splitWords(str: string): string[] {
+  return str.match(/\S+/gu) ?? [];
+}
