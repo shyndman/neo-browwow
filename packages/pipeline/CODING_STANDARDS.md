@@ -38,6 +38,13 @@ an explicit reason.
 A text-node operation should select text nodes. Supporting every possible
 leaf node introduces behavior that needs its own justification.
 
+## Order module members topologically by call order
+
+When a module has a primary execution flow and the language allows top-down
+declarations without workarounds, order top-level module members topologically
+by call order — entry points first, followed by the helpers they invoke in the
+order they are reached.
+
 ## Keep local operations readable locally
 
 Prefer a short library callback that exposes the transformation directly.
