@@ -26,7 +26,7 @@ const DOCUMENT_TYPE_CRITERIA: Readonly<Record<DocumentType, string>> = {
     'Writing that fits none of the other types, including software or API documentation, READMEs, fiction, correspondence, legal, marketing, administrative, or miscellaneous material.',
 };
 
-const DECISION_MAX_RETRIES = 10;
+const JUDGE_MAX_RETRIES = 10;
 
 /**
  * Classifies the parsed document into a {@link DocumentType} from a bounded
@@ -34,7 +34,7 @@ const DECISION_MAX_RETRIES = 10;
  */
 export async function classifyDocument(
   tree: Root,
-  decisionModel: Experimental_DecisionModel,
+  judge: Experimental_DecisionModel,
   abortSignal?: AbortSignal,
 ): Promise<DocumentType> {
   abortSignal?.throwIfAborted();
@@ -53,7 +53,7 @@ export async function classifyDocument(
 
   try {
     const result = await experimental_decide({
-      model: decisionModel,
+      model: judge,
       state,
       questions: {
         documentType: {
@@ -62,7 +62,7 @@ export async function classifyDocument(
           criteria: DOCUMENT_TYPE_CRITERIA,
         },
       },
-      maxRetries: DECISION_MAX_RETRIES,
+      maxRetries: JUDGE_MAX_RETRIES,
       abortSignal,
     });
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { APICallError } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
+import { parse as parsePageRange } from 'multi-integer-range';
 import { VFile } from 'vfile';
 
 import { type PageTranscription, transcribeFile, transcribeImage } from './transcribe';
@@ -63,7 +64,7 @@ function buildMinimalPdf(pageCount: number): Uint8Array {
 }
 
 describe('transcribeImage', () => {
-  test('calls the model with a blank system prompt, PNG image input, and structured output schema', async () => {
+  test('calls the model with the transcription system prompt, PNG image input, and structured output schema', async () => {
     const sampleImage = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x01, 0x02]);
     const model = createMockTranscriptionModel([
       { transcribedMarkdown: '# Page 1\n\nHello world.', notes: 'Slight skew on top margin.' },
@@ -80,22 +81,21 @@ describe('transcribeImage', () => {
     const call = model.doGenerateCalls[0];
 
     expect(call.responseFormat?.type).toBe('json');
-    expect(call.prompt).toEqual([
-      {
-        role: 'system',
-        content: '',
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'file',
-            data: { type: 'data', data: sampleImage },
-            mediaType: 'image/png',
-          },
-        ],
-      },
-    ]);
+    expect(call.prompt[0]?.role).toBe('system');
+    if (call.prompt[0]?.role === 'system') {
+      expect(call.prompt[0].content).toContain('Transcribe the following page image into Markdown format.');
+    }
+
+    expect(call.prompt[1]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'file',
+          data: { type: 'data', data: sampleImage },
+          mediaType: 'image/png',
+        },
+      ],
+    });
   });
 
   test('supports structured output without optional notes', async () => {
@@ -138,7 +138,6 @@ describe('transcribeImage', () => {
     });
 
     let midFlightError: unknown;
-
     try {
       await transcribeImage(new Uint8Array([1]), midFlightModel, midFlightController.signal);
     } catch (error: unknown) {
@@ -162,7 +161,6 @@ describe('transcribeImage', () => {
     });
 
     let caughtError: unknown;
-
     try {
       await transcribeImage(new Uint8Array([1]), failingModel);
     } catch (error: unknown) {
@@ -226,6 +224,68 @@ describe('transcribeFile', () => {
     for (const call of model.doGenerateCalls) {
       expectPngImageCall(call);
     }
+  });
+
+  test('transcribes only the requested page ranges when pages option is provided', async () => {
+    const pdfFile = new VFile({
+      path: 'multi.pdf',
+      value: buildMinimalPdf(8),
+    });
+    const model = createMockTranscriptionModel([
+      { transcribedMarkdown: 'Page 1' },
+      { transcribedMarkdown: 'Page 2' },
+      { transcribedMarkdown: 'Page 3' },
+      { transcribedMarkdown: 'Page 6' },
+      { transcribedMarkdown: 'Page 7' },
+      { transcribedMarkdown: 'Page 8' },
+    ]);
+
+    const results = await transcribeFile(pdfFile, model, {
+      pages: parsePageRange('1,2,3,6-8'),
+    });
+
+    expect(results).toEqual([
+      { transcribedMarkdown: 'Page 1' },
+      { transcribedMarkdown: 'Page 2' },
+      { transcribedMarkdown: 'Page 3' },
+      { transcribedMarkdown: 'Page 6' },
+      { transcribedMarkdown: 'Page 7' },
+      { transcribedMarkdown: 'Page 8' },
+    ]);
+    expect(model.doGenerateCalls).toHaveLength(6);
+  });
+
+  test('throws RangeError when requested pages fall outside the document bounds', async () => {
+    const pdfFile = new VFile({
+      path: 'short.pdf',
+      value: buildMinimalPdf(3),
+    });
+    const model = createMockTranscriptionModel([]);
+
+    let outOfUpperBoundError: unknown;
+
+    try {
+      await transcribeFile(pdfFile, model, { pages: parsePageRange('1-4') });
+    } catch (error: unknown) {
+      outOfUpperBoundError = error;
+    }
+
+    expect(outOfUpperBoundError).toBeInstanceOf(RangeError);
+    if (outOfUpperBoundError instanceof RangeError) {
+      expect(outOfUpperBoundError.message).toContain('1-4');
+      expect(outOfUpperBoundError.message).toContain('1-3');
+    }
+
+    let outOfLowerBoundError: unknown;
+
+    try {
+      await transcribeFile(pdfFile, model, { pages: [[0, 1]] });
+    } catch (error: unknown) {
+      outOfLowerBoundError = error;
+    }
+
+    expect(outOfLowerBoundError).toBeInstanceOf(RangeError);
+    expect(model.doGenerateCalls).toHaveLength(0);
   });
 
   test('rejects non-binary VFile inputs', async () => {

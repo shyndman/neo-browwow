@@ -11,7 +11,7 @@ const logger = getLogger(['browwow', 'pipeline']);
 
 export async function makeSpeakable(
   markdownFile: VFile,
-  decisionModel: Experimental_DecisionModel,
+  judge: Experimental_DecisionModel,
   abortSignal?: AbortSignal,
 ): Promise<Root> {
   abortSignal?.throwIfAborted();
@@ -23,7 +23,7 @@ export async function makeSpeakable(
   });
 
   const tree = await parseFile(markdownFile);
-  const documentType = await classifyDocument(tree, decisionModel, abortSignal);
+  const documentType = await classifyDocument(tree, judge, abortSignal);
 
   RootMetadata.attach(tree, documentType);
 

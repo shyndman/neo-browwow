@@ -33,6 +33,7 @@
     "hast-util-to-mdast": "^10.1.2",
     "mdast": "^3.0.0",
     "mdast-util-to-string": "^4.0.0",
+    "multi-integer-range": "^6.1.0",
     "rehype-parse": "^9.0.1",
     "remark": "^15.0.1",
     "remark-directive": "^4.0.0",

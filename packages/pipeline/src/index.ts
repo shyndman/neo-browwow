@@ -9,4 +9,9 @@ export {
   type TextSpan,
 } from './mdast';
 export { makeSpeakable } from './pipeline';
-export { type PageTranscription, transcribeFile, transcribeImage } from './transcribe';
+export {
+  type PageTranscription,
+  type TranscribeFileOptions,
+  transcribeFile,
+  transcribeImage,
+} from './transcribe';

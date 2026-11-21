@@ -1,12 +1,27 @@
 import { getLogger } from '@logtape/logtape';
 import { type LanguageModel, Output, generateText } from 'ai';
+import {
+  type MultiIntegerRange,
+  iterate as iteratePages,
+  length as pageRangeLength,
+  max as maxPage,
+  min as minPage,
+  stringify as stringifyPageRange,
+} from 'multi-integer-range';
 import { getDocumentProxy, renderPageAsImage } from 'unpdf';
 import type { VFile } from 'vfile';
 import { z } from 'zod';
 
 const logger = getLogger(['browwow', 'pipeline', 'transcribe']);
 
-const TRANSCRIPTION_SYSTEM_PROMPT = '';
+const TRANSCRIBER_SYSTEM_PROMPT = `
+  Transcribe the following page image into Markdown format.
+
+  * Use extended syntax for footnotes.
+  * Tables, including those with colspans and rowspans are supported.
+  * Omit headers and non-footnote footers.
+  * Do not include any HTML. You are not attempting to recreate the PDF's layout in Markdown.
+`;
 const PAGE_RENDER_SCALE = 2;
 const PNG_MEDIA_TYPE = 'image/png';
 
@@ -20,11 +35,18 @@ export interface PageTranscription {
   readonly notes?: string;
 }
 
+export interface TranscribeFileOptions {
+  readonly pages?: MultiIntegerRange;
+  readonly abortSignal?: AbortSignal;
+}
+
 export async function transcribeFile(
   pdfFile: VFile,
-  model: LanguageModel,
-  abortSignal?: AbortSignal,
+  transcriber: LanguageModel,
+  options: TranscribeFileOptions = {},
 ): Promise<PageTranscription[]> {
+  const { pages, abortSignal } = options;
+
   abortSignal?.throwIfAborted();
 
   const sourceLabel = pdfFile.path || '<inline>';
@@ -40,14 +62,20 @@ export async function transcribeFile(
 
   try {
     const totalPages = pdf.numPages;
+    const selectedPages = resolvePageRange(pages, totalPages, sourceLabel);
 
-    logger.info('Opened PDF {source} with {totalPages} pages.', { source: sourceLabel, totalPages });
+    logger.info('Opened PDF {source} with {totalPages} pages; transcribing {selectedCount} ({pageSpec}).', {
+      source: sourceLabel,
+      totalPages,
+      selectedCount: pageRangeLength(selectedPages),
+      pageSpec: stringifyPageRange(selectedPages),
+    });
 
-    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+    for (const pageNumber of iteratePages(selectedPages)) {
       abortSignal?.throwIfAborted();
 
       const pageImage = await renderPdfPage(pdf, pageNumber, totalPages, sourceLabel);
-      const transcription = await transcribeImage(pageImage, model, abortSignal);
+      const transcription = await transcribeImage(pageImage, transcriber, abortSignal);
       transcriptions.push(transcription);
 
       logger.info('Completed page {pageNumber}/{totalPages} of {source}.', {
@@ -70,7 +98,7 @@ export async function transcribeFile(
 
 export async function transcribeImage(
   image: Uint8Array,
-  model: LanguageModel,
+  transcriber: LanguageModel,
   abortSignal?: AbortSignal,
 ): Promise<PageTranscription> {
   abortSignal?.throwIfAborted();
@@ -81,8 +109,8 @@ export async function transcribeImage(
 
   try {
     const result = await generateText({
-      model,
-      instructions: TRANSCRIPTION_SYSTEM_PROMPT,
+      model: transcriber,
+      instructions: TRANSCRIBER_SYSTEM_PROMPT,
       output: Output.object({ schema: pageTranscriptionSchema }),
       messages: [{ role: 'user', content: [{ type: 'image', image, mediaType: PNG_MEDIA_TYPE }] }],
       abortSignal,
@@ -120,6 +148,38 @@ function readPdfBytes(pdfFile: VFile, sourceLabel: string): Uint8Array {
   }
 
   return new Uint8Array(pdfFile.value);
+}
+
+function resolvePageRange(
+  requestedPages: MultiIntegerRange | undefined,
+  totalPages: number,
+  sourceLabel: string,
+): MultiIntegerRange {
+  if (requestedPages === undefined) {
+    return totalPages > 0 ? [[1, totalPages]] : [];
+  }
+
+  const firstPage = minPage(requestedPages);
+  const lastPage = maxPage(requestedPages);
+
+  if (firstPage === undefined || lastPage === undefined) {
+    return [];
+  }
+
+  if (firstPage < 1 || lastPage > totalPages) {
+    throw new RangeError(
+      `Requested pages (${stringifyPageRange(requestedPages)}) fall outside 1-${totalPages} for ${sourceLabel}`,
+      {
+        cause: {
+          source: sourceLabel,
+          pages: stringifyPageRange(requestedPages),
+          totalPages,
+        },
+      },
+    );
+  }
+
+  return requestedPages;
 }
 
 function renderPdfPage(

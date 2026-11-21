@@ -6,26 +6,50 @@ import { Crust, defineCommand } from '@crustjs/core';
 import { defineEnv } from '@crustjs/env';
 import { help } from '@crustjs/extensions';
 import { getLogger } from '@logtape/logtape';
+import {
+  type MultiIntegerRange,
+  min as minPage,
+  parse as parsePageRange,
+  stringify as stringifyPageRange,
+} from 'multi-integer-range';
 import { read } from 'to-vfile';
 import { inspect } from 'unist-util-inspect';
 import { removePosition } from 'unist-util-remove-position';
+import { z } from 'zod';
 
 import { configureLogging } from './logging';
 import { makeSpeakable } from './pipeline';
 import { transcribeFile } from './transcribe';
 
-const LLAMA_BASE_URL = 'https://llama.don.haus/v1';
-const LLAMA_PROVIDER_NAME = 'llama';
-const DECISION_MODEL_ID = 'elephant_1_w6800';
-const TRANSCRIPTION_MODEL_ID = '3090_swift_15_qwen38_flash_next-iq3_xxs';
+const TRANSCRIBER_PROVIDER_NAME = 'transcriber';
+const JUDGE_MODEL_ID = 'elephant_1_w6800';
+const TRANSCRIBER_MODEL_ID = '3090_swift_15_qwen38_flash_next-iq3_xxs';
 
 const logger = getLogger(['browwow', 'pipeline', 'main']);
 
-const env = defineEnv('env', {
-  LLAMA_BEARER_TOKEN: {
+const judgeEnv = defineEnv('judgeEnv', {
+  JUDGE_BASE_URL: {
     type: 'string',
     required: true,
-    description: 'Bearer token for the local llama model endpoint.',
+    description: 'Base URL for the judge endpoint.',
+  },
+  JUDGE_BEARER_TOKEN: {
+    type: 'string',
+    required: true,
+    description: 'Bearer token for the judge endpoint.',
+  },
+});
+
+const transcriberEnv = defineEnv('transcriberEnv', {
+  TRANSCRIBER_BASE_URL: {
+    type: 'string',
+    required: true,
+    description: 'Base URL for the transcriber endpoint.',
+  },
+  TRANSCRIBER_BEARER_TOKEN: {
+    type: 'string',
+    required: true,
+    description: 'Bearer token for the transcriber endpoint.',
   },
 });
 
@@ -36,7 +60,7 @@ const speakableCommand = defineCommand(
   },
   (command) =>
     command
-      .use(env)
+      .provide(judgeEnv())
       .args({
         name: 'file',
         type: 'path',
@@ -49,15 +73,15 @@ const speakableCommand = defineCommand(
           filePath: args.file,
         });
 
-        const { LLAMA_BEARER_TOKEN } = await ctx.env;
-        const decisionModel = createTypeSafeAi({
-          apiKey: LLAMA_BEARER_TOKEN,
-          baseURL: LLAMA_BASE_URL,
-        }).decisionModel(DECISION_MODEL_ID);
+        const { JUDGE_BASE_URL, JUDGE_BEARER_TOKEN } = await ctx.judgeEnv;
+        const judge = createTypeSafeAi({
+          apiKey: JUDGE_BEARER_TOKEN,
+          baseURL: JUDGE_BASE_URL,
+        }).decisionModel(JUDGE_MODEL_ID);
 
         try {
           const file = await read(args.file, { encoding: 'utf-8' });
-          const tree = await makeSpeakable(file, decisionModel, signal);
+          const tree = await makeSpeakable(file, judge, signal);
 
           removePosition(tree, { force: true });
           stdout(inspect(tree, { color: true }));
@@ -75,41 +99,80 @@ const speakableCommand = defineCommand(
       }),
 );
 
+const pageRangeFlagSchema = z
+  .string()
+  .optional()
+  .transform((value, ctx): MultiIntegerRange | undefined => {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    try {
+      const pages = parsePageRange(value);
+      const firstPage = minPage(pages);
+
+      if (firstPage === undefined || firstPage < 1) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Pages must contain at least one positive 1-based page number.',
+        });
+        return z.NEVER;
+      }
+
+      return pages;
+    } catch (error: unknown) {
+      ctx.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : 'Invalid page range.',
+      });
+      return z.NEVER;
+    }
+  });
+
 const transcribeCommand = defineCommand(
   'transcribe',
   {
-    description: 'Transcribe a PDF document page by page using a local vision language model.',
+    description: 'Transcribe a PDF document page by page using the transcriber.',
   },
   (command) =>
     command
-      .use(env)
+      .provide(transcriberEnv())
       .args({
         name: 'file',
         type: 'path',
         required: true,
         description: 'Path to the PDF file to transcribe.',
       })
-      .action(async ({ args, ctx, signal }) => {
+      .flags({
+        pages: {
+          type: 'string',
+          schema: pageRangeFlagSchema,
+          description: 'Pages or ranges to transcribe (e.g., 1-4 or 1,2,3,6-8). Defaults to all pages.',
+        },
+      })
+      .action(async ({ args, flags, ctx, signal }) => {
         await configureLogging();
-        logger.info('Running transcribe command for {filePath}.', {
+
+        const pagesLabel = flags.pages === undefined ? 'all' : stringifyPageRange(flags.pages);
+
+        logger.info('Running transcribe command for {filePath} (pages: {pages}).', {
           filePath: args.file,
+          pages: pagesLabel,
         });
 
-        const { LLAMA_BEARER_TOKEN } = await ctx.env;
-        const transcriptionModel = createOpenAICompatible({
-          name: LLAMA_PROVIDER_NAME,
-          baseURL: LLAMA_BASE_URL,
-          apiKey: LLAMA_BEARER_TOKEN,
+        const { TRANSCRIBER_BASE_URL, TRANSCRIBER_BEARER_TOKEN } = await ctx.transcriberEnv;
+        const transcriber = createOpenAICompatible({
+          name: TRANSCRIBER_PROVIDER_NAME,
+          baseURL: TRANSCRIBER_BASE_URL,
+          apiKey: TRANSCRIBER_BEARER_TOKEN,
           supportsStructuredOutputs: true,
-        }).chatModel(TRANSCRIPTION_MODEL_ID);
+        }).chatModel(TRANSCRIBER_MODEL_ID);
 
         try {
           const file = await read(args.file);
-          await transcribeFile(file, transcriptionModel, signal);
+          await transcribeFile(file, transcriber, { pages: flags.pages, abortSignal: signal });
 
-          logger.info('Completed transcribe command for {filePath}.', {
-            filePath: args.file,
-          });
+          logger.info('Completed transcribe command for {filePath}.', { filePath: args.file });
         } catch (error: unknown) {
           logger.error('Transcription execution failed: {error} (cause: {cause}).', {
             error,
@@ -124,7 +187,6 @@ const app = new Crust('brow', {
   description: 'Document processing CLI for Browwow.',
 })
   .extend(help())
-  .provide(env())
   .add(speakableCommand)
   .add(transcribeCommand);
 await app.execute();
