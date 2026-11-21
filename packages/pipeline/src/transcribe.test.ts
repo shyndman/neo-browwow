@@ -288,6 +288,172 @@ describe('transcribeFile', () => {
     expect(model.doGenerateCalls).toHaveLength(0);
   });
 
+  test('dispatches transcription requests in concurrent batches of 5 and preserves page order', async () => {
+    const pdfFile = new VFile({
+      path: 'batched.pdf',
+      value: buildMinimalPdf(7),
+    });
+
+    interface PendingCall {
+      readonly pageNumber: number;
+      readonly resolve: () => void;
+    }
+
+    const pendingCalls: PendingCall[] = [];
+    let nextPageNumber = 1;
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const model = new MockLanguageModelV4({
+      modelId: 'vision-test',
+      doGenerate: () => {
+        const pageNumber = nextPageNumber;
+        nextPageNumber += 1;
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+
+        return new Promise((resolve) => {
+          pendingCalls.push({
+            pageNumber,
+            resolve: () => {
+              inFlight -= 1;
+              resolve({
+                content: [
+                  { type: 'text', text: JSON.stringify({ transcribedMarkdown: `Page ${pageNumber}` }) },
+                ],
+                finishReason: { unified: 'stop', raw: 'stop' },
+                usage: MOCK_USAGE,
+                warnings: [],
+              });
+            },
+          });
+        });
+      },
+    });
+
+    const waitForPendingCount = async (expectedCount: number): Promise<void> => {
+      for (let attempt = 0; attempt < 200 && pendingCalls.length < expectedCount; attempt += 1) {
+        await Bun.sleep(5);
+      }
+    };
+
+    const transcriptionPromise = transcribeFile(pdfFile, model);
+
+    await waitForPendingCount(5);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([1, 2, 3, 4, 5]);
+    expect(inFlight).toBe(5);
+
+    const firstBatch = pendingCalls.splice(0, 5).toReversed();
+    for (const call of firstBatch) {
+      call.resolve();
+    }
+
+    await waitForPendingCount(2);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([6, 7]);
+    expect(inFlight).toBe(2);
+
+    const secondBatch = pendingCalls.splice(0, 2).toReversed();
+    for (const call of secondBatch) {
+      call.resolve();
+    }
+
+    const results = await transcriptionPromise;
+
+    expect(maxInFlight).toBe(5);
+    expect(results).toEqual([
+      { transcribedMarkdown: 'Page 1' },
+      { transcribedMarkdown: 'Page 2' },
+      { transcribedMarkdown: 'Page 3' },
+      { transcribedMarkdown: 'Page 4' },
+      { transcribedMarkdown: 'Page 5' },
+      { transcribedMarkdown: 'Page 6' },
+      { transcribedMarkdown: 'Page 7' },
+    ]);
+  });
+
+  test('dispatches transcription requests in concurrent batches of 5 and preserves page order', async () => {
+    const pdfFile = new VFile({
+      path: 'batched.pdf',
+      value: buildMinimalPdf(7),
+    });
+
+    interface PendingCall {
+      readonly pageNumber: number;
+      readonly resolve: () => void;
+    }
+
+    const pendingCalls: PendingCall[] = [];
+    let nextPageNumber = 1;
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const model = new MockLanguageModelV4({
+      modelId: 'vision-test',
+      doGenerate: () => {
+        const pageNumber = nextPageNumber;
+        nextPageNumber += 1;
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+
+        return new Promise((resolve) => {
+          pendingCalls.push({
+            pageNumber,
+            resolve: () => {
+              inFlight -= 1;
+              resolve({
+                content: [
+                  { type: 'text', text: JSON.stringify({ transcribedMarkdown: `Page ${pageNumber}` }) },
+                ],
+                finishReason: { unified: 'stop', raw: 'stop' },
+                usage: MOCK_USAGE,
+                warnings: [],
+              });
+            },
+          });
+        });
+      },
+    });
+
+    const waitForPendingCount = async (expectedCount: number): Promise<void> => {
+      for (let attempt = 0; attempt < 200 && pendingCalls.length < expectedCount; attempt += 1) {
+        await Bun.sleep(5);
+      }
+    };
+
+    const transcriptionPromise = transcribeFile(pdfFile, model);
+
+    await waitForPendingCount(5);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([1, 2, 3, 4, 5]);
+    expect(inFlight).toBe(5);
+
+    const firstBatch = pendingCalls.splice(0, 5).toReversed();
+    for (const call of firstBatch) {
+      call.resolve();
+    }
+
+    await waitForPendingCount(2);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([6, 7]);
+    expect(inFlight).toBe(2);
+
+    const secondBatch = pendingCalls.splice(0, 2).toReversed();
+    for (const call of secondBatch) {
+      call.resolve();
+    }
+
+    const results = await transcriptionPromise;
+
+    expect(maxInFlight).toBe(5);
+    expect(results).toEqual([
+      { transcribedMarkdown: 'Page 1' },
+      { transcribedMarkdown: 'Page 2' },
+      { transcribedMarkdown: 'Page 3' },
+      { transcribedMarkdown: 'Page 4' },
+      { transcribedMarkdown: 'Page 5' },
+      { transcribedMarkdown: 'Page 6' },
+      { transcribedMarkdown: 'Page 7' },
+    ]);
+  });
+
   test('rejects non-binary VFile inputs', async () => {
     const textFile = new VFile({ path: 'not-a-pdf.txt', value: 'hello' });
     const model = createMockTranscriptionModel([]);

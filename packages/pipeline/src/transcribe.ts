@@ -12,6 +12,8 @@ import { getDocumentProxy, renderPageAsImage } from 'unpdf';
 import type { VFile } from 'vfile';
 import { z } from 'zod';
 
+import * as iterables from './foundation/iterables';
+
 const logger = getLogger(['browwow', 'pipeline', 'transcribe']);
 
 const TRANSCRIBER_SYSTEM_PROMPT = `
@@ -22,6 +24,8 @@ const TRANSCRIBER_SYSTEM_PROMPT = `
   * Omit headers and non-footnote footers.
   * Do not include any HTML. You are not attempting to recreate the PDF's layout in Markdown.
 `;
+const MAX_CONCURRENT_TRANSCRIPTIONS = 5;
+const TRANSCRIBER_MAX_RETRIES = 5;
 const PAGE_RENDER_SCALE = 2;
 const PNG_MEDIA_TYPE = 'image/png';
 
@@ -38,6 +42,12 @@ export interface PageTranscription {
 export interface TranscribeFileOptions {
   readonly pages?: MultiIntegerRange;
   readonly abortSignal?: AbortSignal;
+}
+
+interface PdfContext {
+  readonly pdf: Awaited<ReturnType<typeof getDocumentProxy>>;
+  readonly totalPages: number;
+  readonly sourceLabel: string;
 }
 
 export async function transcribeFile(
@@ -63,26 +73,24 @@ export async function transcribeFile(
   try {
     const totalPages = pdf.numPages;
     const selectedPages = resolvePageRange(pages, totalPages, sourceLabel);
+    const pdfContext: PdfContext = { pdf, totalPages, sourceLabel };
 
-    logger.info('Opened PDF {source} with {totalPages} pages; transcribing {selectedCount} ({pageSpec}).', {
-      source: sourceLabel,
-      totalPages,
-      selectedCount: pageRangeLength(selectedPages),
-      pageSpec: stringifyPageRange(selectedPages),
-    });
+    logger.info(
+      'Opened PDF {source} with {totalPages} pages; transcribing {selectedCount} ({pageSpec}) in batches of {batchSize}.',
+      {
+        source: sourceLabel,
+        totalPages,
+        selectedCount: pageRangeLength(selectedPages),
+        pageSpec: stringifyPageRange(selectedPages),
+        batchSize: MAX_CONCURRENT_TRANSCRIPTIONS,
+      },
+    );
 
-    for (const pageNumber of iteratePages(selectedPages)) {
+    for (const pageBatch of iterables.batch(iteratePages(selectedPages), MAX_CONCURRENT_TRANSCRIPTIONS)) {
       abortSignal?.throwIfAborted();
 
-      const pageImage = await renderPdfPage(pdf, pageNumber, totalPages, sourceLabel);
-      const transcription = await transcribeImage(pageImage, transcriber, abortSignal);
-      transcriptions.push(transcription);
-
-      logger.info('Completed page {pageNumber}/{totalPages} of {source}.', {
-        pageNumber,
-        totalPages,
-        source: sourceLabel,
-      });
+      const batchResults = await transcribePageBatch(pdfContext, pageBatch, transcriber, abortSignal);
+      transcriptions.push(...batchResults);
     }
   } finally {
     await pdf.loadingTask.destroy();
@@ -113,6 +121,7 @@ export async function transcribeImage(
       instructions: TRANSCRIBER_SYSTEM_PROMPT,
       output: Output.object({ schema: pageTranscriptionSchema }),
       messages: [{ role: 'user', content: [{ type: 'image', image, mediaType: PNG_MEDIA_TYPE }] }],
+      maxRetries: TRANSCRIBER_MAX_RETRIES,
       abortSignal,
     });
 
@@ -182,18 +191,60 @@ function resolvePageRange(
   return requestedPages;
 }
 
-function renderPdfPage(
-  pdf: Awaited<ReturnType<typeof getDocumentProxy>>,
-  pageNumber: number,
-  totalPages: number,
-  sourceLabel: string,
-): Promise<Uint8Array> {
+async function transcribePageBatch(
+  pdfContext: PdfContext,
+  pageNumbers: readonly number[],
+  transcriber: LanguageModel,
+  abortSignal?: AbortSignal,
+): Promise<PageTranscription[]> {
+  const { totalPages, sourceLabel } = pdfContext;
+  const pageImages: Uint8Array[] = [];
+
+  for (const pageNumber of pageNumbers) {
+    abortSignal?.throwIfAborted();
+    pageImages.push(await renderPdfPage(pdfContext, pageNumber));
+  }
+
+  logger.info('Dispatching transcription batch of {batchSize} pages ({pages}) for {source}.', {
+    batchSize: pageNumbers.length,
+    pages: pageNumbers.join(', '),
+    source: sourceLabel,
+  });
+
+  // TODO: Cache all completed page work on a fatal error so retrying after a fix does not have to pay the cost again.
+  const results = await Promise.all(
+    pageImages.map((pageImage, index) => {
+      const pageNumber = pageNumbers[index];
+
+      return transcribeImage(pageImage, transcriber, abortSignal).then((transcription) => {
+        logger.info('Completed page {pageNumber}/{totalPages} of {source}.', {
+          pageNumber,
+          totalPages,
+          source: sourceLabel,
+        });
+        return transcription;
+      });
+    }),
+  );
+
+  logger.info('Completed transcription batch ({pages}) for {source}.', {
+    pages: pageNumbers.join(', '),
+    source: sourceLabel,
+  });
+
+  return results;
+}
+
+function renderPdfPage(pdfContext: PdfContext, pageNumber: number): Promise<Uint8Array> {
+  const { pdf, totalPages, sourceLabel } = pdfContext;
+
   logger.info('Rendering page {pageNumber}/{totalPages} of {source} at scale {scale}.', {
     pageNumber,
     totalPages,
     source: sourceLabel,
     scale: PAGE_RENDER_SCALE,
   });
+
   return renderPageAsImage(pdf, pageNumber, {
     canvasImport: () => import('@napi-rs/canvas'),
     scale: PAGE_RENDER_SCALE,

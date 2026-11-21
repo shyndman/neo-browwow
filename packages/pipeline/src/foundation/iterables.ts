@@ -22,6 +22,31 @@ export function* windows<T>(iterable: Iterable<T>, size: number): Generator<T[],
 }
 
 /**
+ * Lazily groups elements of an iterable into non-overlapping batches of up to `size` items.
+ * @throws {RangeError} If `size` is not a positive safe integer.
+ */
+export function* batch<T>(iterable: Iterable<T>, size: number): Generator<T[], void, void> {
+  if (!Number.isSafeInteger(size) || size < 1) {
+    throw new RangeError('Batch size must be a positive safe integer', {
+      cause: { size },
+    });
+  }
+
+  let current: T[] = [];
+  for (const item of iterable) {
+    current.push(item);
+    if (current.length === size) {
+      yield current;
+      current = [];
+    }
+  }
+
+  if (current.length > 0) {
+    yield current;
+  }
+}
+
+/**
  * Yields the elements of an iterable in reverse order.
  * Consumes the iterable into an array before yielding.
  * Use with caution on large iterables.

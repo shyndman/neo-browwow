@@ -1,6 +1,51 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isSorted, isSortedAscending, isSortedDescending, withIsLast } from './iterables';
+import { batch, isSorted, isSortedAscending, isSortedDescending, withIsLast } from './iterables';
+
+describe('batch', () => {
+  test('groups iterables into non-overlapping batches including a trailing partial batch', () => {
+    expect(Array.from(batch([], 3))).toEqual([]);
+    expect(Array.from(batch([1, 2], 3))).toEqual([[1, 2]]);
+    expect(Array.from(batch([1, 2, 3, 4, 5, 6], 3))).toEqual([
+      [1, 2, 3],
+      [4, 5, 6],
+    ]);
+    expect(Array.from(batch([1, 2, 3, 4, 5, 6, 7], 5))).toEqual([
+      [1, 2, 3, 4, 5],
+      [6, 7],
+    ]);
+  });
+
+  test('consumes lazily and closes the source on early exit', () => {
+    const consumed: number[] = [];
+    let closed = false;
+
+    function* source(): Generator<number, void, void> {
+      try {
+        for (let value = 1; ; value += 1) {
+          consumed.push(value);
+          yield value;
+        }
+      } finally {
+        closed = true;
+      }
+    }
+
+    for (const chunk of batch(source(), 2)) {
+      expect(chunk).toEqual([1, 2]);
+      break;
+    }
+
+    expect(consumed).toEqual([1, 2]);
+    expect(closed).toBe(true);
+  });
+
+  for (const invalidSize of [0, -1, 1.5, NaN, Infinity]) {
+    test(`rejects invalid batch size ${invalidSize}`, () => {
+      expect(() => Array.from(batch([1, 2, 3], invalidSize))).toThrow(RangeError);
+    });
+  }
+});
 
 describe('withIsLast', () => {
   test('handles empty and singleton iterables', () => {
