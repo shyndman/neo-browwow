@@ -5,7 +5,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { parse as parsePageRange } from 'multi-integer-range';
 import { VFile } from 'vfile';
 
-import { type PageTranscription, transcribeFile, transcribeImage } from './transcribe';
+import { type PageTranscription, transcribeFile, transcribeImage } from './index';
 
 const PNG_MAGIC_BYTES = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 

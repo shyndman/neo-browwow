@@ -1,7 +1,7 @@
 import { getLogger } from '@logtape/logtape';
 
-import type { TextRange } from './foundation/strings';
-import type { ParentheticalKind } from './mdast';
+import type { ParentheticalKind } from '../ast';
+import type { TextRange } from '../foundation/strings';
 
 const logger = getLogger(['browwow', 'pipeline', 'parentheticals']);
 

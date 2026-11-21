@@ -1,4 +1,3 @@
-export { classifyDocument } from './classify/index';
 export {
   type DocumentType,
   type Parenthetical,
@@ -7,11 +6,12 @@ export {
   type Sentence,
   TextMetadata,
   type TextSpan,
-} from './mdast';
+} from './ast';
+export { classifyDocument } from './classify/index';
 export { makeSpeakable } from './pipeline';
 export {
   type PageTranscription,
   type TranscribeFileOptions,
   transcribeFile,
   transcribeImage,
-} from './transcribe';
+} from './transcribe/index';

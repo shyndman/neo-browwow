@@ -2,7 +2,7 @@ import { getLogger } from '@logtape/logtape';
 import { type Experimental_DecisionModel, experimental_decide } from 'ai';
 import type { Root } from 'mdast';
 
-import type { DocumentType } from '../mdast';
+import type { DocumentType } from '../ast';
 import { sampleDocumentForClassification } from './sample';
 
 const logger = getLogger(['browwow', 'pipeline', 'classify']);

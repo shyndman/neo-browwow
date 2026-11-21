@@ -4,8 +4,8 @@ import { APICallError } from 'ai';
 import { Experimental_DecisionMockModelV4 } from 'ai/test';
 import { VFile } from 'vfile';
 
-import type { DocumentType } from '../mdast';
-import { parseFile } from '../parse';
+import type { DocumentType } from '../ast';
+import { parseFile } from '../parse/index';
 import { classifyDocument } from './index';
 
 type CapturedDecisionCall = Parameters<Experimental_DecisionMockModelV4['doDecide']>[0];

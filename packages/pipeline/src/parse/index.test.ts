@@ -3,9 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import type { Blockquote, Emphasis, Link, Paragraph, Strong, Text } from 'mdast';
 import { VFile } from 'vfile';
 
-import { splitTextNode } from './foundation/mdast';
-import { type Parenthetical, type Sentence, TextMetadata } from './mdast';
-import { parseFile } from './parse';
+import { type Parenthetical, type Sentence, TextMetadata } from '../ast';
+import { splitTextNode } from '../foundation/mdast';
+import { parseFile } from './index';
 
 test('splits text leaves in place without splitting inline ancestors and attaches sentence spans', async () => {
   const tree = await parseFile(

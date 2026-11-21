@@ -12,7 +12,7 @@ import { getDocumentProxy, renderPageAsImage } from 'unpdf';
 import type { VFile } from 'vfile';
 import { z } from 'zod';
 
-import * as iterables from './foundation/iterables';
+import * as iterables from '../foundation/iterables';
 
 const logger = getLogger(['browwow', 'pipeline', 'transcribe']);
 

@@ -9,12 +9,12 @@ import { visit } from 'unist-util-visit';
 import { visitParents } from 'unist-util-visit-parents';
 import type { VFile } from 'vfile';
 
-import * as arrays from './foundation/arrays';
-import * as iterables from './foundation/iterables';
-import { findCommonAncestor, isTextNode, splitTextNode } from './foundation/mdast';
-import { RangeMap } from './foundation/range-map';
-import type { TextRange } from './foundation/strings';
-import { TextMetadata, type TextSpan } from './mdast';
+import { TextMetadata, type TextSpan } from '../ast';
+import * as arrays from '../foundation/arrays';
+import * as iterables from '../foundation/iterables';
+import { findCommonAncestor, isTextNode, splitTextNode } from '../foundation/mdast';
+import { RangeMap } from '../foundation/range-map';
+import type { TextRange } from '../foundation/strings';
 import { findParentheticalRanges, type ParentheticalRange } from './parentheticals';
 import { findSentenceDelimiters } from './sentence-splitter/index';
 

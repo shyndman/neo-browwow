@@ -15,4 +15,4 @@ tasks:
     desc: Transcribe a PDF document page by page
     dotenv: ['.env']
     cmds:
-      - bun run packages/pipeline/src/main.ts transcribe {{.CLI_ARGS}}
+      - bun run packages/pipeline/src/cli/main.ts transcribe {{.CLI_ARGS}}

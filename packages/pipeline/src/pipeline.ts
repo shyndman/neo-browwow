@@ -3,9 +3,9 @@ import type { Experimental_DecisionModel } from 'ai';
 import type { Root } from 'mdast';
 import type { VFile } from 'vfile';
 
+import { RootMetadata } from './ast';
 import { classifyDocument } from './classify/index';
-import { RootMetadata } from './mdast';
-import { parseFile } from './parse';
+import { parseFile } from './parse/index';
 
 const logger = getLogger(['browwow', 'pipeline']);
 
