@@ -266,8 +266,8 @@ describe('parseFile parenthetical and sentence integration', () => {
     expect(hostSentence).toEqual({
       type: 'sentence',
       commonAncestor: paragraph,
-      start: leaves[0]!,
-      end: leaves[3]!,
+      start: leaves[0],
+      end: leaves[3],
       text: 'We use Adam (see Kingma, 2015. Compare Loshchilov, 2019) for all runs.',
     });
     expect(leaves[3]?.data?.ends).toEqual([hostSentence]);
@@ -278,8 +278,8 @@ describe('parseFile parenthetical and sentence integration', () => {
       type: 'parenthetical',
       kind: 'round',
       commonAncestor: paragraph,
-      start: leaves[1]!,
-      end: leaves[2]!,
+      start: leaves[1],
+      end: leaves[2],
       text: '(see Kingma, 2015. Compare Loshchilov, 2019)',
     });
     expect(leaves[2]?.data?.ends).toContain(parenthetical);

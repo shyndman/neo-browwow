@@ -1,0 +1,249 @@
+import { describe, expect, test } from 'bun:test';
+
+import { APICallError } from 'ai';
+import { MockLanguageModelV4 } from 'ai/test';
+import { VFile } from 'vfile';
+
+import { type PageTranscription, transcribeFile, transcribeImage } from './transcribe';
+
+const PNG_MAGIC_BYTES = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+const MOCK_USAGE = {
+  inputTokens: { total: 100, noCache: 100, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 25, text: 25, reasoning: 0 },
+} as const;
+
+function createMockTranscriptionModel(responses: readonly PageTranscription[]): MockLanguageModelV4 {
+  let callIndex = 0;
+
+  return new MockLanguageModelV4({
+    modelId: 'vision-test',
+    doGenerate: () => {
+      const payload = responses[callIndex];
+      callIndex += 1;
+
+      return Promise.resolve({
+        content: [{ type: 'text', text: JSON.stringify(payload) }],
+        finishReason: { unified: 'stop', raw: 'stop' },
+        usage: MOCK_USAGE,
+        warnings: [],
+      });
+    },
+  });
+}
+
+function buildMinimalPdf(pageCount: number): Uint8Array {
+  const objects: string[] = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    `2 0 obj\n<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${i + 3} 0 R`).join(' ')}] /Count ${pageCount} >>\nendobj\n`,
+  ];
+
+  for (let i = 0; i < pageCount; i += 1) {
+    objects.push(`${i + 3} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] >>\nendobj\n`);
+  }
+
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [];
+
+  for (const object of objects) {
+    offsets.push(body.length);
+    body += object;
+  }
+
+  const xrefOffset = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+
+  for (const offset of offsets) {
+    body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+
+  return new TextEncoder().encode(body);
+}
+
+describe('transcribeImage', () => {
+  test('calls the model with a blank system prompt, PNG image input, and structured output schema', async () => {
+    const sampleImage = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x01, 0x02]);
+    const model = createMockTranscriptionModel([
+      { transcribedMarkdown: '# Page 1\n\nHello world.', notes: 'Slight skew on top margin.' },
+    ]);
+
+    const result = await transcribeImage(sampleImage, model);
+
+    expect(result).toEqual({
+      transcribedMarkdown: '# Page 1\n\nHello world.',
+      notes: 'Slight skew on top margin.',
+    });
+    expect(model.doGenerateCalls).toHaveLength(1);
+
+    const call = model.doGenerateCalls[0];
+
+    expect(call.responseFormat?.type).toBe('json');
+    expect(call.prompt).toEqual([
+      {
+        role: 'system',
+        content: '',
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'file',
+            data: { type: 'data', data: sampleImage },
+            mediaType: 'image/png',
+          },
+        ],
+      },
+    ]);
+  });
+
+  test('supports structured output without optional notes', async () => {
+    const model = createMockTranscriptionModel([{ transcribedMarkdown: 'Plain paragraph.' }]);
+    const result = await transcribeImage(new Uint8Array([1, 2, 3]), model);
+
+    expect(result).toEqual({ transcribedMarkdown: 'Plain paragraph.' });
+    expect(result.notes).toBeUndefined();
+  });
+
+  test('propagates abort signals before and after the model call', async () => {
+    const preAbortReason = new Error('Pre-aborted');
+    const preAborted = new AbortController();
+    preAborted.abort(preAbortReason);
+
+    const uncalledModel = createMockTranscriptionModel([{ transcribedMarkdown: 'unused' }]);
+    let preAbortError: unknown;
+    try {
+      await transcribeImage(new Uint8Array([1]), uncalledModel, preAborted.signal);
+    } catch (error: unknown) {
+      preAbortError = error;
+    }
+
+    expect(preAbortError).toBe(preAbortReason);
+    expect(uncalledModel.doGenerateCalls).toHaveLength(0);
+
+    const midFlightReason = new Error('Aborted mid-flight');
+    const midFlightController = new AbortController();
+    const midFlightModel = new MockLanguageModelV4({
+      modelId: 'vision-test',
+      doGenerate: () => {
+        midFlightController.abort(midFlightReason);
+        return Promise.resolve({
+          content: [{ type: 'text', text: JSON.stringify({ transcribedMarkdown: 'partial' }) }],
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: MOCK_USAGE,
+          warnings: [],
+        });
+      },
+    });
+
+    let midFlightError: unknown;
+
+    try {
+      await transcribeImage(new Uint8Array([1]), midFlightModel, midFlightController.signal);
+    } catch (error: unknown) {
+      midFlightError = error;
+    }
+
+    expect(midFlightError).toBe(midFlightReason);
+  });
+
+  test('wraps model failures in an Error with cause', async () => {
+    const upstreamFailure = new APICallError({
+      message: 'Unauthorized',
+      url: 'https://llama.don.haus/v1/chat/completions',
+      requestBodyValues: {},
+      statusCode: 401,
+      isRetryable: false,
+    });
+    const failingModel = new MockLanguageModelV4({
+      modelId: 'vision-test',
+      doGenerate: () => Promise.reject(upstreamFailure),
+    });
+
+    let caughtError: unknown;
+
+    try {
+      await transcribeImage(new Uint8Array([1]), failingModel);
+    } catch (error: unknown) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(Error);
+    if (caughtError instanceof Error) {
+      expect(caughtError.message).toBe('Failed to transcribe page image');
+      expect(caughtError.cause).toBe(upstreamFailure);
+    }
+  });
+});
+
+function expectPngImageCall(call: MockLanguageModelV4['doGenerateCalls'][number]): void {
+  const userMessage = call.prompt[1];
+
+  expect(userMessage?.role).toBe('user');
+  if (userMessage?.role !== 'user') {
+    return;
+  }
+
+  const part = userMessage.content[0];
+
+  expect(part?.type).toBe('file');
+  if (part?.type !== 'file') {
+    return;
+  }
+
+  expect(part.mediaType).toBe('image/png');
+  expect(part.data.type).toBe('data');
+  if (part.data.type !== 'data') {
+    return;
+  }
+
+  expect(part.data.data).toBeInstanceOf(Uint8Array);
+  if (part.data.data instanceof Uint8Array) {
+    expect(Array.from(part.data.data.slice(0, PNG_MAGIC_BYTES.length))).toEqual(PNG_MAGIC_BYTES);
+  }
+}
+
+describe('transcribeFile', () => {
+  test('renders each PDF page to a PNG image and transcribes pages in order', async () => {
+    const pdfFile = new VFile({
+      path: 'sample.pdf',
+      value: buildMinimalPdf(2),
+    });
+    const model = createMockTranscriptionModel([
+      { transcribedMarkdown: '# First Page' },
+      { transcribedMarkdown: '# Second Page', notes: 'Footer cropped.' },
+    ]);
+
+    const results = await transcribeFile(pdfFile, model);
+
+    expect(results).toEqual([
+      { transcribedMarkdown: '# First Page' },
+      { transcribedMarkdown: '# Second Page', notes: 'Footer cropped.' },
+    ]);
+    expect(model.doGenerateCalls).toHaveLength(2);
+
+    for (const call of model.doGenerateCalls) {
+      expectPngImageCall(call);
+    }
+  });
+
+  test('rejects non-binary VFile inputs', async () => {
+    const textFile = new VFile({ path: 'not-a-pdf.txt', value: 'hello' });
+    const model = createMockTranscriptionModel([]);
+
+    let caughtError: unknown;
+
+    try {
+      await transcribeFile(textFile, model);
+    } catch (error: unknown) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(TypeError);
+    if (caughtError instanceof Error) {
+      expect(caughtError.message).toBe('Expected binary PDF content in not-a-pdf.txt');
+    }
+    expect(model.doGenerateCalls).toHaveLength(0);
+  });
+});

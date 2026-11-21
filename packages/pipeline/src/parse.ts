@@ -1,11 +1,11 @@
 import { getLogger } from '@logtape/logtape';
-import type { Node, Paragraph, Parent, Root, Text } from 'mdast';
+import type { Paragraph, Parent, Root, Text } from 'mdast';
 import { remark } from 'remark';
 import remarkDirective from 'remark-directive';
 import remarkExtendedTable from 'remark-extended-table';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import { selectAll } from 'unist-util-select';
+import { visit } from 'unist-util-visit';
 import { visitParents } from 'unist-util-visit-parents';
 import type { VFile } from 'vfile';
 
@@ -42,10 +42,10 @@ export async function parseFile(markdownFile: VFile): Promise<Root> {
     .use(remarkDirective);
 
   const tree = parser.parse(source);
-  const transformedTree = await parser.run(tree);
+  await parser.run(tree);
 
   // Identify parts of text important to its pronunciation
-  processParagraphs(transformedTree);
+  processParagraphs(tree);
 
   logger.info('Parsed Markdown tree for {sourceLabel} ({childCount} root children).', {
     sourceLabel,
@@ -100,17 +100,18 @@ interface ParagraphContext {
  * the boundary leaves at each span's start and end offsets, and attaches the
  * resulting `TextSpan` to `start` and `end`.
  */
-function processParagraphs(tree: Node): void {
-  const paragraphs = selectAll('paragraph', tree);
+function processParagraphs(tree: Root): void {
+  let paragraphCount = 0;
   let parentheticalCount = 0;
   let sentenceCount = 0;
 
-  for (const node of paragraphs) {
-    // SAFETY: The selectAll() above ensures that the node is indeed a Paragraph.
-    const ctx = indexParagraph(node as Paragraph);
+  visit(tree, 'paragraph', (paragraph) => {
+    paragraphCount += 1;
+
+    const ctx = indexParagraph(paragraph);
     if (ctx.paragraphText.length === 0) {
       logger.debug('Skipping paragraph with no text leaves.');
-      continue;
+      return;
     }
 
     const parentheticalRanges = Array.from(findParentheticalRanges(ctx.paragraphText));
@@ -130,12 +131,12 @@ function processParagraphs(tree: Node): void {
       });
       sentenceCount += 1;
     }
-  }
+  });
 
   logger.debug(
     'Annotated {paragraphCount} paragraph(s) with {parentheticalCount} parenthetical and {sentenceCount} sentence span(s).',
     {
-      paragraphCount: paragraphs.length,
+      paragraphCount,
       parentheticalCount,
       sentenceCount,
     },

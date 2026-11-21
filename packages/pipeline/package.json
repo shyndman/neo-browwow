@@ -21,11 +21,13 @@
   },
   "dependencies": {
     "@accuser/unist-util-flatmap": "^1.0.2",
+    "@ai-sdk/openai-compatible": "^3.0.94",
     "@ai-sdk/typesafe-ai": "^3.0.41",
     "@crustjs/core": "^0.6.1",
     "@crustjs/env": "^0.2.1",
     "@crustjs/extensions": "^0.6.1",
     "@logtape/logtape": "^2.4.2",
+    "@napi-rs/canvas": "^1.2.0",
     "ai": "^7.0.174",
     "css-selector-parser": "^3.3.0",
     "hast-util-to-mdast": "^10.1.2",
@@ -48,8 +50,10 @@
     "unist-util-select": "^5.1.0",
     "unist-util-visit": "^5.2.0",
     "unist-util-visit-parents": "^6.1.0",
+    "unpdf": "^2.2.1",
     "vfile": "^6.0.3",
-    "vfile-location": "^5.0.3"
+    "vfile-location": "^5.0.3",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@ai-sdk/gateway": "^4.0.149",

@@ -163,7 +163,7 @@ declare module 'mdast' {
     readonly documentType: DocumentType;
   }
 
-  interface TextData extends SplitAwareNodeData<Text> {
+  interface TextData extends SplitAwareNodeData {
     readonly starts: TextSpan[];
     readonly ends: TextSpan[];
   }
