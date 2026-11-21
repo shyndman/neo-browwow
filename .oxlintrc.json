@@ -19,6 +19,7 @@
     "eslint/max-lines-per-function": ["error", { "max": 55 }],
     "eslint/max-classes-per-file": ["error", { "max": 3 }],
     "eslint/no-inline-comments": "off",
+    "eslint/no-warning-comments": "off",
     "oxc/no-accumulating-spread": "error",
     "anti-slop/no-array-filter-map": "error",
     "anti-slop/no-reduce-accumulator-copy": "error",
