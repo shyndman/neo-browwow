@@ -2,6 +2,9 @@
   "name": "@browwow/pipeline",
   "version": "1.0.0",
   "description": "Document processing pipeline.",
+  "bin": {
+    "brow": "./src/main.ts"
+  },
   "files": [
     "./dist"
   ],
@@ -9,7 +12,7 @@
   "module": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "dev:main": "bun run --env-file ../../.env --hot ./src/main.ts",
+    "dev:main": "bun run --env-file ../../.env --hot ./src/main.ts speakable ./samples/advancing_sustainability_science-short.md",
     "dev:scratch": "bun run --hot ./src/decision-scratch.ts",
     "dev:lib": "bun run --hot ./src/index.ts",
     "test": "bun test src/ --coverage",
@@ -19,6 +22,9 @@
   "dependencies": {
     "@accuser/unist-util-flatmap": "^1.0.2",
     "@ai-sdk/typesafe-ai": "^3.0.41",
+    "@crustjs/core": "^0.6.1",
+    "@crustjs/env": "^0.2.1",
+    "@crustjs/extensions": "^0.6.1",
     "@logtape/logtape": "^2.4.2",
     "ai": "^7.0.174",
     "css-selector-parser": "^3.3.0",

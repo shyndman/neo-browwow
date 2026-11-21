@@ -1,52 +1,80 @@
+#!/usr/bin/env bun
+
 import { createTypeSafeAi } from '@ai-sdk/typesafe-ai';
-import { configure, getAnsiColorFormatter, getConsoleSink, getLogger } from '@logtape/logtape';
+import { Crust, defineCommand } from '@crustjs/core';
+import { defineEnv } from '@crustjs/env';
+import { help } from '@crustjs/extensions';
+import { getLogger } from '@logtape/logtape';
 import { read } from 'to-vfile';
 import { inspect } from 'unist-util-inspect';
 import { removePosition } from 'unist-util-remove-position';
 
+import { configureLogging } from './logging';
 import { makeSpeakable } from './pipeline';
 
-await configure({
-  sinks: {
-    console: getConsoleSink({
-      formatter: getAnsiColorFormatter({ sourceLocation: true }),
-    }),
-  },
-  loggers: [
-    {
-      category: ['logtape', 'meta'],
-      lowestLevel: 'warning',
-      sinks: ['console'],
-    },
-    {
-      category: ['browwow'],
-      lowestLevel: 'debug',
-      sinks: ['console'],
-      captureSourceLocation: true,
-    },
-  ],
-});
+const DECISION_MODEL_BASE_URL = 'https://llama.don.haus/v1';
+const DECISION_MODEL_ID = 'elephant_1_w6800';
 
 const logger = getLogger(['browwow', 'pipeline', 'main']);
 
-const SENTENCE_SPLITTING_URI = new URL(
-  '../samples/advancing_sustainability_science-short.md',
-  import.meta.url,
+const env = defineEnv('env', {
+  LLAMA_BEARER_TOKEN: {
+    type: 'string',
+    required: true,
+    description: 'Bearer token for the decision model endpoint.',
+  },
+});
+
+const speakableCommand = defineCommand(
+  'speakable',
+  {
+    description: 'Prepare a Markdown document for speech and inspect its syntax tree.',
+  },
+  (command) =>
+    command
+      .use(env)
+      .args({
+        name: 'file',
+        type: 'path',
+        required: true,
+        description: 'Path to the Markdown file to process.',
+      })
+      .action(async ({ args, ctx, signal, stdout }) => {
+        await configureLogging();
+        logger.info('Running speakable command for {filePath}.', {
+          filePath: args.file,
+        });
+
+        const { LLAMA_BEARER_TOKEN } = await ctx.env;
+        const decisionModel = createTypeSafeAi({
+          apiKey: LLAMA_BEARER_TOKEN,
+          baseURL: DECISION_MODEL_BASE_URL,
+        }).decisionModel(DECISION_MODEL_ID);
+
+        try {
+          const file = await read(args.file, { encoding: 'utf-8' });
+          const tree = await makeSpeakable(file, decisionModel, signal);
+
+          removePosition(tree, { force: true });
+          stdout(inspect(tree, { color: true }));
+
+          logger.info('Completed speakable command for {filePath}.', {
+            filePath: args.file,
+          });
+        } catch (error: unknown) {
+          logger.error('Pipeline execution failed: {error} (cause: {cause}).', {
+            error,
+            cause: error instanceof Error ? error.cause : undefined,
+          });
+          throw error;
+        }
+      }),
 );
-const file = await read(SENTENCE_SPLITTING_URI, { encoding: 'utf-8' });
-const decisionModel = createTypeSafeAi({
-  apiKey: process.env.LLAMA_BEARER_TOKEN,
-  baseURL: 'https://llama.don.haus/v1',
-}).decisionModel('elephant_1_w6800');
 
-try {
-  const tree = await makeSpeakable(file, decisionModel);
-  removePosition(tree, { force: true });
-
-  console.log(inspect(tree, { color: true }));
-} catch (error: unknown) {
-  logger.error('Pipeline execution failed: {error} (cause: {cause}).', {
-    error,
-    cause: error instanceof Error ? error.cause : undefined,
-  });
-}
+const app = new Crust('brow', {
+  description: 'Document processing CLI for Browwow.',
+})
+  .extend(help())
+  .provide(env())
+  .add(speakableCommand);
+await app.execute();
