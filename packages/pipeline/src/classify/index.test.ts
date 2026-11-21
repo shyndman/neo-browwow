@@ -54,7 +54,7 @@ describe('classifyDocument', () => {
     expect(documentType).toBe('research_paper');
     expect(calls).toHaveLength(1);
 
-    const call = calls[0]!;
+    const call = calls[0];
 
     expect(call.state).toEqual([
       {
@@ -126,7 +126,7 @@ describe('classifyDocument', () => {
 
     await classifyDocument(tree, model);
 
-    const stateValue = calls[0]!.state[0];
+    const stateValue = calls[0].state[0];
 
     expect(stateValue).toEqual({
       type: 'json',
@@ -181,7 +181,7 @@ describe('classifyDocument', () => {
 
     await classifyDocument(tree, model);
 
-    const call = calls[0]!;
+    const call = calls[0];
     const question = call.questions.documentType;
 
     expect(question?.type).toBe('choice');
@@ -235,7 +235,7 @@ describe('classifyDocument', () => {
 
     await classifyDocument(tree, model);
 
-    const statePart = calls[0]!.state[0];
+    const statePart = calls[0].state[0];
 
     expect(statePart?.type).toBe('json');
     if (statePart?.type === 'json') {
@@ -270,11 +270,15 @@ describe('classifyDocument', () => {
 
     const { model: uncalledModel, calls } = createMockClassifier('news_article');
 
-    const preAbortCheck = expect(
-      classifyDocument(tree, uncalledModel, preAbortedController.signal),
-    ).rejects.toBe(preAbortReason);
+    let preAbortError: unknown;
 
-    await preAbortCheck;
+    try {
+      await classifyDocument(tree, uncalledModel, preAbortedController.signal);
+    } catch (error: unknown) {
+      preAbortError = error;
+    }
+
+    expect(preAbortError).toBe(preAbortReason);
     expect(calls).toHaveLength(0);
 
     const postAbortReason = new Error('Aborted during decision');
@@ -295,11 +299,15 @@ describe('classifyDocument', () => {
       },
     });
 
-    const postAbortCheck = expect(
-      classifyDocument(tree, midFlightModel, midFlightController.signal),
-    ).rejects.toBe(postAbortReason);
+    let postAbortError: unknown;
 
-    await postAbortCheck;
+    try {
+      await classifyDocument(tree, midFlightModel, midFlightController.signal);
+    } catch (error: unknown) {
+      postAbortError = error;
+    }
+
+    expect(postAbortError).toBe(postAbortReason);
   });
 
   test('wraps non-retryable decision model failures in an Error with cause', async () => {

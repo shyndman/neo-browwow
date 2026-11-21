@@ -1,7 +1,7 @@
 import { getLogger } from '@logtape/logtape';
 import type { Root } from 'mdast';
 import { type Options as ToStringOptions, toString } from 'mdast-util-to-string';
-import { SKIP, visit } from 'unist-util-visit';
+import { CONTINUE, SKIP, visit } from 'unist-util-visit';
 
 import * as strings from '../foundation/strings';
 
@@ -95,33 +95,35 @@ function extractSections(tree: Root): Section[] {
   };
 
   visit(tree, (node) => {
-    switch (node.type) {
-      case 'heading':
-        flush();
-        heading = toString(node, TO_STRING_OPTIONS).trim();
-        return SKIP;
-
-      case 'paragraph':
-      case 'code':
-      case 'math':
-      case 'tableCell':
-        append(toString(node, TO_STRING_OPTIONS));
-        return SKIP;
-
-      case 'leafDirective':
-        if (node.name === CAPTION_DIRECTIVE_NAME) {
-          append(toString(node, TO_STRING_OPTIONS));
-        }
-
-        return SKIP;
-
-      case 'containerDirective':
-        if (node.name !== CAPTION_DIRECTIVE_NAME) return SKIP;
-        break;
-
-      default:
-        break;
+    if (node.type === 'heading') {
+      flush();
+      heading = toString(node, TO_STRING_OPTIONS).trim();
+      return SKIP;
     }
+
+    if (
+      node.type === 'paragraph' ||
+      node.type === 'code' ||
+      node.type === 'math' ||
+      node.type === 'tableCell'
+    ) {
+      append(toString(node, TO_STRING_OPTIONS));
+      return SKIP;
+    }
+
+    if (node.type === 'leafDirective') {
+      if (node.name === CAPTION_DIRECTIVE_NAME) {
+        append(toString(node, TO_STRING_OPTIONS));
+      }
+
+      return SKIP;
+    }
+
+    if (node.type === 'containerDirective' && node.name !== CAPTION_DIRECTIVE_NAME) {
+      return SKIP;
+    }
+
+    return CONTINUE;
   });
 
   flush();

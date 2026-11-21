@@ -64,7 +64,9 @@ describe('RangeMap', () => {
     const map = new RangeMap(splitValue);
     const node = { value: { length: 2 } };
 
-    expect(() => map.append({ value: { length: -1 } })).toThrow(RangeError);
+    expect(() => {
+      map.append({ value: { length: -1 } });
+    }).toThrow(RangeError);
     map.append(node);
     expect(map.get(0)).toBe(node);
     expect(map.get(1)).toBe(node);
@@ -76,7 +78,9 @@ describe('RangeMap', () => {
       const map = new RangeMap(splitString);
       map.append('first', 2);
 
-      expect(() => map.append('invalid', length)).toThrow(RangeError);
+      expect(() => {
+        map.append('invalid', length);
+      }).toThrow(RangeError);
       map.append('second', 3);
 
       expect(map.get(1)).toBe('first');
@@ -154,7 +158,9 @@ describe('RangeMap', () => {
     map.append('first', Number.MAX_SAFE_INTEGER - 1);
     map.append('last', 1);
 
-    expect(() => map.append('overflow', 1)).toThrow(RangeError);
+    expect(() => {
+      map.append('overflow', 1);
+    }).toThrow(RangeError);
     map.append('empty end', 0);
 
     expect(map.get(Number.MAX_SAFE_INTEGER - 2)).toBe('first');

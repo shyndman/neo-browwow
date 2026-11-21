@@ -45,14 +45,18 @@ describe('replace', () => {
   test('throws without modifying the array when the item is absent', () => {
     const values = [1, 2, 3];
 
-    expect(() => replace(values, 4, 5)).toThrow();
+    expect(() => {
+      replace(values, 4, 5);
+    }).toThrow();
     expect(values).toEqual([1, 2, 3]);
   });
 
   test('throws when the array is empty', () => {
     const values: number[] = [];
 
-    expect(() => replace(values, 1, 2)).toThrow();
+    expect(() => {
+      replace(values, 1, 2);
+    }).toThrow();
     expect(values).toEqual([]);
   });
 });
