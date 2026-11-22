@@ -39,7 +39,7 @@ export async function runSpeakableCommand({
 
   const judge = createTypeSafeAi({
     apiKey: env.JUDGE_BEARER_TOKEN,
-    baseURL: env.JUDGE_BASE_URL,
+    baseURL: env.JUDGE_BASE_URL.href,
   }).decisionModel(JUDGE_MODEL_ID);
 
   try {

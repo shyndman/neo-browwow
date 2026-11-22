@@ -84,7 +84,7 @@ export async function runTranscribeCommand({
 
   const transcriber = createOpenAICompatible({
     name: TRANSCRIBER_PROVIDER_NAME,
-    baseURL: env.TRANSCRIBER_BASE_URL,
+    baseURL: env.TRANSCRIBER_BASE_URL.href,
     apiKey: env.TRANSCRIBER_BEARER_TOKEN,
     supportsStructuredOutputs: true,
   }).chatModel(TRANSCRIBER_MODEL_ID);
