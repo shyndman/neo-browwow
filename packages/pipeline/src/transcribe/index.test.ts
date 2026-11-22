@@ -67,13 +67,18 @@ describe('transcribeImage', () => {
   test('calls the model with the transcription system prompt, PNG image input, and structured output schema', async () => {
     const sampleImage = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x01, 0x02]);
     const model = createMockTranscriptionModel([
-      { transcribedMarkdown: '# Page 1\n\nHello world.', notes: 'Slight skew on top margin.' },
+      {
+        transcribedMarkdown: '# Page 1\n\nHello world.',
+        continuesPreviousPage: false,
+        notes: 'Slight skew on top margin.',
+      },
     ]);
 
     const result = await transcribeImage(sampleImage, model);
 
     expect(result).toEqual({
       transcribedMarkdown: '# Page 1\n\nHello world.',
+      continuesPreviousPage: false,
       notes: 'Slight skew on top margin.',
     });
     expect(model.doGenerateCalls).toHaveLength(1);
@@ -83,7 +88,8 @@ describe('transcribeImage', () => {
     expect(call.responseFormat?.type).toBe('json');
     expect(call.prompt[0]?.role).toBe('system');
     if (call.prompt[0]?.role === 'system') {
-      expect(call.prompt[0].content).toContain('Transcribe the following page image into Markdown format.');
+      expect(call.prompt[0].content).toContain('GitHub Flavored Markdown');
+      expect(call.prompt[0].content).toContain('continuesPreviousPage');
     }
 
     expect(call.prompt[1]).toEqual({
@@ -99,11 +105,52 @@ describe('transcribeImage', () => {
   });
 
   test('supports structured output without optional notes', async () => {
-    const model = createMockTranscriptionModel([{ transcribedMarkdown: 'Plain paragraph.' }]);
+    const model = createMockTranscriptionModel([
+      { transcribedMarkdown: 'Plain paragraph.', continuesPreviousPage: true },
+    ]);
     const result = await transcribeImage(new Uint8Array([1, 2, 3]), model);
 
-    expect(result).toEqual({ transcribedMarkdown: 'Plain paragraph.' });
+    expect(result).toEqual({ transcribedMarkdown: 'Plain paragraph.', continuesPreviousPage: true });
     expect(result.notes).toBeUndefined();
+  });
+
+  test('accepts an empty transcription inside the structured envelope', async () => {
+    const model = createMockTranscriptionModel([
+      { transcribedMarkdown: '', continuesPreviousPage: false, notes: 'Blank page' },
+    ]);
+    const result = await transcribeImage(new Uint8Array([1, 2, 3]), model);
+
+    expect(result).toEqual({
+      transcribedMarkdown: '',
+      continuesPreviousPage: false,
+      notes: 'Blank page',
+    });
+  });
+
+  test('rejects model output missing continuesPreviousPage', async () => {
+    const invalidModel = new MockLanguageModelV4({
+      modelId: 'vision-test',
+      doGenerate: () =>
+        Promise.resolve({
+          content: [{ type: 'text', text: JSON.stringify({ transcribedMarkdown: 'Missing flag.' }) }],
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: MOCK_USAGE,
+          warnings: [],
+        }),
+    });
+
+    let caughtError: unknown;
+    try {
+      await transcribeImage(new Uint8Array([1, 2, 3]), invalidModel);
+    } catch (error: unknown) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(Error);
+    if (caughtError instanceof Error) {
+      expect(caughtError.message).toBe('Failed to transcribe page image');
+      expect(caughtError.cause).toBeDefined();
+    }
   });
 
   test('propagates abort signals before and after the model call', async () => {
@@ -111,7 +158,9 @@ describe('transcribeImage', () => {
     const preAborted = new AbortController();
     preAborted.abort(preAbortReason);
 
-    const uncalledModel = createMockTranscriptionModel([{ transcribedMarkdown: 'unused' }]);
+    const uncalledModel = createMockTranscriptionModel([
+      { transcribedMarkdown: 'unused', continuesPreviousPage: false },
+    ]);
     let preAbortError: unknown;
     try {
       await transcribeImage(new Uint8Array([1]), uncalledModel, preAborted.signal);
@@ -129,7 +178,12 @@ describe('transcribeImage', () => {
       doGenerate: () => {
         midFlightController.abort(midFlightReason);
         return Promise.resolve({
-          content: [{ type: 'text', text: JSON.stringify({ transcribedMarkdown: 'partial' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ transcribedMarkdown: 'partial', continuesPreviousPage: false }),
+            },
+          ],
           finishReason: { unified: 'stop', raw: 'stop' },
           usage: MOCK_USAGE,
           warnings: [],
@@ -209,15 +263,15 @@ describe('transcribeFile', () => {
       value: buildMinimalPdf(2),
     });
     const model = createMockTranscriptionModel([
-      { transcribedMarkdown: '# First Page' },
-      { transcribedMarkdown: '# Second Page', notes: 'Footer cropped.' },
+      { transcribedMarkdown: '# First Page', continuesPreviousPage: false },
+      { transcribedMarkdown: '# Second Page', continuesPreviousPage: true, notes: 'Footer cropped.' },
     ]);
 
     const results = await transcribeFile(pdfFile, model);
 
     expect(results).toEqual([
-      { transcribedMarkdown: '# First Page' },
-      { transcribedMarkdown: '# Second Page', notes: 'Footer cropped.' },
+      { transcribedMarkdown: '# First Page', continuesPreviousPage: false },
+      { transcribedMarkdown: '# Second Page', continuesPreviousPage: true, notes: 'Footer cropped.' },
     ]);
     expect(model.doGenerateCalls).toHaveLength(2);
 
@@ -232,12 +286,12 @@ describe('transcribeFile', () => {
       value: buildMinimalPdf(8),
     });
     const model = createMockTranscriptionModel([
-      { transcribedMarkdown: 'Page 1' },
-      { transcribedMarkdown: 'Page 2' },
-      { transcribedMarkdown: 'Page 3' },
-      { transcribedMarkdown: 'Page 6' },
-      { transcribedMarkdown: 'Page 7' },
-      { transcribedMarkdown: 'Page 8' },
+      { transcribedMarkdown: 'Page 1', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 2', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 3', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 6', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 7', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 8', continuesPreviousPage: false },
     ]);
 
     const results = await transcribeFile(pdfFile, model, {
@@ -245,12 +299,12 @@ describe('transcribeFile', () => {
     });
 
     expect(results).toEqual([
-      { transcribedMarkdown: 'Page 1' },
-      { transcribedMarkdown: 'Page 2' },
-      { transcribedMarkdown: 'Page 3' },
-      { transcribedMarkdown: 'Page 6' },
-      { transcribedMarkdown: 'Page 7' },
-      { transcribedMarkdown: 'Page 8' },
+      { transcribedMarkdown: 'Page 1', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 2', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 3', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 6', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 7', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 8', continuesPreviousPage: false },
     ]);
     expect(model.doGenerateCalls).toHaveLength(6);
   });
@@ -319,7 +373,13 @@ describe('transcribeFile', () => {
               inFlight -= 1;
               resolve({
                 content: [
-                  { type: 'text', text: JSON.stringify({ transcribedMarkdown: `Page ${pageNumber}` }) },
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      transcribedMarkdown: `Page ${pageNumber}`,
+                      continuesPreviousPage: false,
+                    }),
+                  },
                 ],
                 finishReason: { unified: 'stop', raw: 'stop' },
                 usage: MOCK_USAGE,
@@ -361,13 +421,13 @@ describe('transcribeFile', () => {
 
     expect(maxInFlight).toBe(5);
     expect(results).toEqual([
-      { transcribedMarkdown: 'Page 1' },
-      { transcribedMarkdown: 'Page 2' },
-      { transcribedMarkdown: 'Page 3' },
-      { transcribedMarkdown: 'Page 4' },
-      { transcribedMarkdown: 'Page 5' },
-      { transcribedMarkdown: 'Page 6' },
-      { transcribedMarkdown: 'Page 7' },
+      { transcribedMarkdown: 'Page 1', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 2', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 3', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 4', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 5', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 6', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 7', continuesPreviousPage: false },
     ]);
   });
 
@@ -402,7 +462,13 @@ describe('transcribeFile', () => {
               inFlight -= 1;
               resolve({
                 content: [
-                  { type: 'text', text: JSON.stringify({ transcribedMarkdown: `Page ${pageNumber}` }) },
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      transcribedMarkdown: `Page ${pageNumber}`,
+                      continuesPreviousPage: false,
+                    }),
+                  },
                 ],
                 finishReason: { unified: 'stop', raw: 'stop' },
                 usage: MOCK_USAGE,
@@ -444,13 +510,13 @@ describe('transcribeFile', () => {
 
     expect(maxInFlight).toBe(5);
     expect(results).toEqual([
-      { transcribedMarkdown: 'Page 1' },
-      { transcribedMarkdown: 'Page 2' },
-      { transcribedMarkdown: 'Page 3' },
-      { transcribedMarkdown: 'Page 4' },
-      { transcribedMarkdown: 'Page 5' },
-      { transcribedMarkdown: 'Page 6' },
-      { transcribedMarkdown: 'Page 7' },
+      { transcribedMarkdown: 'Page 1', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 2', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 3', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 4', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 5', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 6', continuesPreviousPage: false },
+      { transcribedMarkdown: 'Page 7', continuesPreviousPage: false },
     ]);
   });
 

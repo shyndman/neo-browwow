@@ -17,25 +17,72 @@ import * as iterables from '../foundation/iterables';
 const logger = getLogger(['browwow', 'pipeline', 'transcribe']);
 
 const TRANSCRIBER_SYSTEM_PROMPT = `
-  Transcribe the following page image into Markdown format.
+<role>
+Transcribe the provided English document page image into clean GitHub Flavored Markdown (GFM).
+</role>
 
-  * Use extended syntax for footnotes.
-  * Tables, including those with colspans and rowspans are supported.
-  * Omit headers and non-footnote footers.
-  * Do not include any HTML. You are not attempting to recreate the PDF's layout in Markdown.
-`;
+<critical>
+- Emit pure Markdown only. NEVER emit HTML.
+- Transcribe semantic content and structure; NEVER try to recreate the PDF's visual layout, spacing, or line breaks.
+- Never interrupt a sentence or paragraph with an out-of-flow element.
+- If the page has no transcribable content, set \`transcribedMarkdown\` to \`""\`, \`continuesPreviousPage\` to \`false\`, and explain briefly in \`notes\` (e.g., "Blank page"). Never emit placeholder text such as \`[Blank page]\`.
+</critical>
+
+<directives>
+## Layout and Reading Order
+- Follow logical prose order: top-to-bottom within each column, left-to-right across columns.
+- Omit page chrome: running headers, running footers, page numbers, margin line numbers, and watermarks or margin stamps.
+- Defer every out-of-flow element (tables, sidebars, callouts, pull quotes, algorithm boxes, citation blocks, etc.) until the current sentence or paragraph finishes, placing it at the nearest paragraph boundary.
+- Format sidebars and callouts as Markdown blockquotes (\`>\`).
+
+## Markdown Extensions and Conventions
+- **Headings**: Use Markdown headings (\`#\`–\`######\`) reflecting the page's visible hierarchy rather than bold text.
+- **Math**: Use \`$...$\` for inline math within prose and \`$$...$$\` for standalone display equations.
+- **Footnotes**: Use GFM footnotes (\`[^id]\` and \`[^id]: ...\`). Preserve the page's printed footnote markers (e.g., \`[^4]\`), normalizing non-alphanumeric symbols such as \`*\` or \`†\` to valid identifiers (e.g., \`[^star]\`, \`[^dagger]\`). Collect all footnote definitions at the bottom of the page.
+- **Extended tables**: Colspan and rowspan are supported using \`>\` (merge rightwards into the cell to the right, where the merged text lives) and \`^\` (merge upwards into the cell above).
+</directives>
+
+<example name="extended-table">
+| > | Metric | Value |
+| --- | --- | --- |
+| Latency | p50 | 12ms |
+| ^ | p99 | 45ms |
+</example>
+
+<output>
+- \`transcribedMarkdown\`: The page's Markdown content, or \`""\` if the page has no transcribable content.
+- \`continuesPreviousPage\`: \`true\` if the page's opening content continues an unfinished element from the previous page; otherwise \`false\`.
+- \`notes\`: Optional brief note for transcription issues, or a brief explanation when \`transcribedMarkdown\` is \`""\`.
+</output>
+
+<critical>
+No HTML, no visual layout mimicry, no mid-sentence interruptions, and no placeholder text for empty pages.
+</critical>
+`.trim();
 const MAX_CONCURRENT_TRANSCRIPTIONS = 5;
 const TRANSCRIBER_MAX_RETRIES = 5;
 const PAGE_RENDER_SCALE = 2;
 const PNG_MEDIA_TYPE = 'image/png';
 
+// Single-sided continuation avoids cross-page disagreement; keeping the envelope flat
+// ensures even empty pages must return a structured object (distinguishing blank pages
+// from silent refusals via `notes`).
 const pageTranscriptionSchema = z.object({
   transcribedMarkdown: z.string(),
-  notes: z.string().optional().describe('Any issues noticed while transcribing the page.'),
+  continuesPreviousPage: z
+    .boolean()
+    .describe('True when the page opens by continuing an unfinished element from the previous page.'),
+  notes: z
+    .string()
+    .optional()
+    .describe(
+      'Any issues noticed while transcribing the page, or a brief reason when transcribedMarkdown is empty.',
+    ),
 });
 
 export interface PageTranscription {
   readonly transcribedMarkdown: string;
+  readonly continuesPreviousPage: boolean;
   readonly notes?: string;
 }
 
@@ -130,11 +177,12 @@ export async function transcribeImage(
     const transcription: PageTranscription = result.output;
 
     logger.info(
-      'Transcribed page image in {elapsedMs}ms via {modelId} (markdownChars: {markdownChars}, hasNotes: {hasNotes}, usage: {usage}).',
+      'Transcribed page image in {elapsedMs}ms via {modelId} (markdownChars: {markdownChars}, continuesPreviousPage: {continuesPreviousPage}, hasNotes: {hasNotes}, usage: {usage}).',
       {
         elapsedMs: Math.round(performance.now() - startedAt),
         modelId: result.finalStep.response.modelId,
         markdownChars: transcription.transcribedMarkdown.length,
+        continuesPreviousPage: transcription.continuesPreviousPage,
         hasNotes: transcription.notes !== undefined,
         usage: result.usage,
       },
