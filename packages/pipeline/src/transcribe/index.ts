@@ -118,6 +118,7 @@ export async function transcribeImage(
   try {
     const result = await generateText({
       model: transcriber,
+      providerOptions: { transcriber: { reasoningEffort: 'none' } },
       instructions: TRANSCRIBER_SYSTEM_PROMPT,
       output: Output.object({ schema: pageTranscriptionSchema }),
       messages: [{ role: 'user', content: [{ type: 'image', image, mediaType: PNG_MEDIA_TYPE }] }],
