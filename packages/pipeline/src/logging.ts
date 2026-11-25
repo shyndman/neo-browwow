@@ -6,7 +6,11 @@ export async function configureLogging(): Promise<void> {
   await configure({
     sinks: {
       console: getConsoleSink({
-        formatter: getAnsiColorFormatter({ sourceLocation: true }),
+        formatter: getAnsiColorFormatter({
+          sourceLocation: true,
+          value: 'bare',
+          sanitize: { newlines: 'preserve' },
+        }),
       }),
     },
     loggers: [

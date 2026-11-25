@@ -24,9 +24,10 @@ const TRANSCRIBER_SYSTEM_PROMPT = `
   * Omit headers and non-footnote footers.
   * Do not include any HTML. You are not attempting to recreate the PDF's layout in Markdown.
 `;
-const MAX_CONCURRENT_TRANSCRIPTIONS = 5;
+const MAX_CONCURRENT_TRANSCRIPTIONS = 3;
 const TRANSCRIBER_MAX_RETRIES = 5;
-const PAGE_RENDER_SCALE = 2;
+const TRANSCRIBER_TEMPERATURE = 0.4;
+const PAGE_RENDER_SCALE = 3;
 const PNG_MEDIA_TYPE = 'image/png';
 
 const pageTranscriptionSchema = z.object({
@@ -113,15 +114,19 @@ export async function transcribeImage(
 
   const startedAt = performance.now();
 
-  logger.info('Transcribing page image ({byteLength} bytes).', { byteLength: image.byteLength });
+  logger.info('Transcribing page image ({byteLength} bytes, temperature: {temperature}).', {
+    byteLength: image.byteLength,
+    temperature: TRANSCRIBER_TEMPERATURE,
+  });
 
   try {
     const result = await generateText({
       model: transcriber,
-      providerOptions: { transcriber: { reasoningEffort: 'none' } },
+      providerOptions: { transcriber: { reasoningEffort: 'medium' } },
       instructions: TRANSCRIBER_SYSTEM_PROMPT,
       output: Output.object({ schema: pageTranscriptionSchema }),
       messages: [{ role: 'user', content: [{ type: 'image', image, mediaType: PNG_MEDIA_TYPE }] }],
+      temperature: TRANSCRIBER_TEMPERATURE,
       maxRetries: TRANSCRIBER_MAX_RETRIES,
       abortSignal,
     });
@@ -140,6 +145,10 @@ export async function transcribeImage(
         usage: result.usage,
       },
     );
+
+    logger.info('Transcribed markdown:\n{transcribedMarkdown}', {
+      transcribedMarkdown: transcription.transcribedMarkdown,
+    });
 
     if (transcription.notes !== undefined) {
       logger.info('Transcription notes: {notes}', { notes: transcription.notes });

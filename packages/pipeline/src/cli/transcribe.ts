@@ -14,7 +14,7 @@ import { transcribeFile } from '../transcribe/index';
 import type { TranscriberEnv } from './env';
 
 const TRANSCRIBER_PROVIDER_NAME = 'transcriber';
-const TRANSCRIBER_MODEL_ID = '3090_swift_15_qwen38_flash_next-iq3_xxs';
+const TRANSCRIBER_MODEL_ID = '3090_swift_15_qwen38_flash_next-iq3_xxs_16k';
 
 const logger = getLogger(['browwow', 'pipeline', 'cli', 'transcribe']);
 
