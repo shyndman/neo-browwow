@@ -8,6 +8,11 @@ import { VFile } from 'vfile';
 import { type PageTranscription, transcribeFile, transcribeImage } from './index';
 
 const PNG_MAGIC_BYTES = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const PNG_WIDTH_OFFSET = 16;
+const PNG_HEIGHT_OFFSET = 20;
+const EXPECTED_RENDERED_PAGE_SIZE_PX = 216;
+const EXPECTED_TRANSCRIBER_TEMPERATURE = 0.4;
+const EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS = 3;
 
 const MOCK_USAGE = {
   inputTokens: { total: 100, noCache: 100, cacheRead: 0, cacheWrite: 0 },
@@ -81,6 +86,7 @@ describe('transcribeImage', () => {
     const call = model.doGenerateCalls[0];
 
     expect(call.responseFormat?.type).toBe('json');
+    expect(call.temperature).toBe(EXPECTED_TRANSCRIBER_TEMPERATURE);
     expect(call.prompt[0]?.role).toBe('system');
     if (call.prompt[0]?.role === 'system') {
       expect(call.prompt[0].content).toContain('Transcribe the following page image into Markdown format.');
@@ -198,7 +204,12 @@ function expectPngImageCall(call: MockLanguageModelV4['doGenerateCalls'][number]
 
   expect(part.data.data).toBeInstanceOf(Uint8Array);
   if (part.data.data instanceof Uint8Array) {
-    expect(Array.from(part.data.data.slice(0, PNG_MAGIC_BYTES.length))).toEqual(PNG_MAGIC_BYTES);
+    const pngBytes = part.data.data;
+    const pngHeader = new DataView(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+
+    expect(Array.from(pngBytes.slice(0, PNG_MAGIC_BYTES.length))).toEqual(PNG_MAGIC_BYTES);
+    expect(pngHeader.getUint32(PNG_WIDTH_OFFSET)).toBe(EXPECTED_RENDERED_PAGE_SIZE_PX);
+    expect(pngHeader.getUint32(PNG_HEIGHT_OFFSET)).toBe(EXPECTED_RENDERED_PAGE_SIZE_PX);
   }
 }
 
@@ -288,7 +299,7 @@ describe('transcribeFile', () => {
     expect(model.doGenerateCalls).toHaveLength(0);
   });
 
-  test('dispatches transcription requests in concurrent batches of 5 and preserves page order', async () => {
+  test('dispatches transcription requests in concurrent batches of 3 and preserves page order', async () => {
     const pdfFile = new VFile({
       path: 'batched.pdf',
       value: buildMinimalPdf(7),
@@ -339,27 +350,36 @@ describe('transcribeFile', () => {
 
     const transcriptionPromise = transcribeFile(pdfFile, model);
 
-    await waitForPendingCount(5);
-    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([1, 2, 3, 4, 5]);
-    expect(inFlight).toBe(5);
+    await waitForPendingCount(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([1, 2, 3]);
+    expect(inFlight).toBe(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
 
-    const firstBatch = pendingCalls.splice(0, 5).toReversed();
+    const firstBatch = pendingCalls.splice(0, EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS).toReversed();
     for (const call of firstBatch) {
       call.resolve();
     }
 
-    await waitForPendingCount(2);
-    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([6, 7]);
-    expect(inFlight).toBe(2);
+    await waitForPendingCount(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([4, 5, 6]);
+    expect(inFlight).toBe(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
 
-    const secondBatch = pendingCalls.splice(0, 2).toReversed();
+    const secondBatch = pendingCalls.splice(0, EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS).toReversed();
     for (const call of secondBatch) {
+      call.resolve();
+    }
+
+    await waitForPendingCount(1);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([7]);
+    expect(inFlight).toBe(1);
+
+    const thirdBatch = pendingCalls.splice(0, 1).toReversed();
+    for (const call of thirdBatch) {
       call.resolve();
     }
 
     const results = await transcriptionPromise;
 
-    expect(maxInFlight).toBe(5);
+    expect(maxInFlight).toBe(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
     expect(results).toEqual([
       { transcribedMarkdown: 'Page 1' },
       { transcribedMarkdown: 'Page 2' },
@@ -371,7 +391,7 @@ describe('transcribeFile', () => {
     ]);
   });
 
-  test('dispatches transcription requests in concurrent batches of 5 and preserves page order', async () => {
+  test('dispatches transcription requests in concurrent batches of 3 and preserves page order', async () => {
     const pdfFile = new VFile({
       path: 'batched.pdf',
       value: buildMinimalPdf(7),
@@ -422,27 +442,36 @@ describe('transcribeFile', () => {
 
     const transcriptionPromise = transcribeFile(pdfFile, model);
 
-    await waitForPendingCount(5);
-    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([1, 2, 3, 4, 5]);
-    expect(inFlight).toBe(5);
+    await waitForPendingCount(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([1, 2, 3]);
+    expect(inFlight).toBe(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
 
-    const firstBatch = pendingCalls.splice(0, 5).toReversed();
+    const firstBatch = pendingCalls.splice(0, EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS).toReversed();
     for (const call of firstBatch) {
       call.resolve();
     }
 
-    await waitForPendingCount(2);
-    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([6, 7]);
-    expect(inFlight).toBe(2);
+    await waitForPendingCount(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([4, 5, 6]);
+    expect(inFlight).toBe(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
 
-    const secondBatch = pendingCalls.splice(0, 2).toReversed();
+    const secondBatch = pendingCalls.splice(0, EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS).toReversed();
     for (const call of secondBatch) {
+      call.resolve();
+    }
+
+    await waitForPendingCount(1);
+    expect(pendingCalls.map((call) => call.pageNumber)).toEqual([7]);
+    expect(inFlight).toBe(1);
+
+    const thirdBatch = pendingCalls.splice(0, 1).toReversed();
+    for (const call of thirdBatch) {
       call.resolve();
     }
 
     const results = await transcriptionPromise;
 
-    expect(maxInFlight).toBe(5);
+    expect(maxInFlight).toBe(EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS);
     expect(results).toEqual([
       { transcribedMarkdown: 'Page 1' },
       { transcribedMarkdown: 'Page 2' },
