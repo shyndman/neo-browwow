@@ -12,6 +12,7 @@ const PNG_WIDTH_OFFSET = 16;
 const PNG_HEIGHT_OFFSET = 20;
 const EXPECTED_RENDERED_PAGE_SIZE_PX = 216;
 const EXPECTED_TRANSCRIBER_TEMPERATURE = 0.4;
+const EXPECTED_TRANSCRIBER_REASONING_EFFORT = 'medium';
 const EXPECTED_MAX_CONCURRENT_TRANSCRIPTIONS = 3;
 
 const MOCK_USAGE = {
@@ -87,6 +88,9 @@ describe('transcribeImage', () => {
 
     expect(call.responseFormat?.type).toBe('json');
     expect(call.temperature).toBe(EXPECTED_TRANSCRIBER_TEMPERATURE);
+    expect(call.providerOptions?.transcriber).toEqual({
+      reasoningEffort: EXPECTED_TRANSCRIBER_REASONING_EFFORT,
+    });
     expect(call.prompt[0]?.role).toBe('system');
     if (call.prompt[0]?.role === 'system') {
       expect(call.prompt[0].content).toContain('Transcribe the following page image into Markdown format.');

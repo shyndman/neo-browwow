@@ -8,7 +8,7 @@ Investigation into how PDF page render resolution (`PAGE_RENDER_SCALE` in `packa
   - `patch_size = 16`, `spatial_merge_size = 2` → **32 × 32 px per vision token** (height and width snapped to multiples of 32 px).
   - Native pixel budget from `preprocessor_config.json`: `65,536` px (`256 × 256`, 64 vision tokens) up to `16,777,216` px (`4096 × 4096`, 16,384 vision tokens).
   - Base positional embedding grid is `48 × 48` patches (`768 × 768` px), bilinearly interpolated to the resized image dimensions.
-- **Current pipeline defaults** (`packages/pipeline/src/transcribe/index.ts`):
+- **Experimental baseline** (`packages/pipeline/src/transcribe/index.ts`, prior to tuning to `PAGE_RENDER_SCALE = 3` and `temperature = 0.4`):
   - `PAGE_RENDER_SCALE = 2` (144 DPI via `unpdf` + `@napi-rs/canvas`, PNG).
   - `providerOptions: { transcriber: { reasoningEffort: 'medium' } }`, structured output via Zod (`transcribedMarkdown`, `notes`), no explicit `temperature` parameter (server default applies).
   - Prompt + structured-output schema text overhead: **212 tokens**.
@@ -32,19 +32,19 @@ Four US Letter (`612 × 792` pts) equation-heavy pages from `samples/`:
 
 Every page at `scale >= 1.5` reported the exact same `inputTokens: 1220`:
 
-|             Scale | DPI | Rendered PNG  |   MP | Avg PNG | `inputTokens` | Vision Tokens (`−212` text) | Effective Encoder Grid | Avg Output Tokens | Median Latency |
-| ----------------: | --: | ------------- | ---: | ------: | ------------: | --------------------------: | ---------------------- | ----------------: | -------------: |
-|             `1.0` |  72 | `612 × 792`   | 0.48 |  180 KB |         `687` |           `475` (`19 × 25`) | `608 × 800`            |             2,934 |         14.9 s |
-|             `1.5` | 108 | `918 × 1188`  | 1.09 |  313 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             2,131 |         12.9 s |
-| `2.0` _(default)_ | 144 | `1224 × 1584` | 1.94 |  446 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             1,879 |         13.9 s |
-|             `2.5` | 180 | `1530 × 1980` | 3.03 |  572 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             2,481 |         14.8 s |
-|             `3.0` | 216 | `1836 × 2376` | 4.36 |  720 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             2,564 |         14.9 s |
-|             `4.0` | 288 | `2448 × 3168` | 7.75 |  999 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             1,999 |         13.8 s |
+|              Scale | DPI | Rendered PNG  |   MP | Avg PNG | `inputTokens` | Vision Tokens (`−212` text) | Effective Encoder Grid | Avg Output Tokens | Median Latency |
+| -----------------: | --: | ------------- | ---: | ------: | ------------: | --------------------------: | ---------------------- | ----------------: | -------------: |
+|              `1.0` |  72 | `612 × 792`   | 0.48 |  180 KB |         `687` |           `475` (`19 × 25`) | `608 × 800`            |             2,934 |         14.9 s |
+|              `1.5` | 108 | `918 × 1188`  | 1.09 |  313 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             2,131 |         12.9 s |
+| `2.0` _(baseline)_ | 144 | `1224 × 1584` | 1.94 |  446 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             1,879 |         13.9 s |
+|              `2.5` | 180 | `1530 × 1980` | 3.03 |  572 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             2,481 |         14.8 s |
+|              `3.0` | 216 | `1836 × 2376` | 4.36 |  720 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             2,564 |         14.9 s |
+|              `4.0` | 288 | `2448 × 3168` | 7.75 |  999 KB |   **`1,220`** |     **`1,008` (`28 × 36`)** | **`896 × 1152`**       |             1,999 |         13.8 s |
 
 - On `612 × 792` aspect ratio, `scale = 1.0` maps natively to `19 × 25 = 475` vision tokens (`475 + 212 = 687`).
 - Above `scale ≈ 1.46`, the inference server enforces a **1,024-token ceiling per image**: the largest `32 px` grid fitting `612:792` under 1,024 tokens is `28 × 36 = 1,008` tokens (`896 × 1152` px, ~105 DPI; `1,008 + 212 = 1,220`). The next grid step (`29 × 37 = 1,073`) exceeds 1,024.
 - **Root cause (runtime, not model):** Qwen3.8-Flash-Next natively supports up to 16,384 vision tokens (`1224 × 1584` at `scale = 2.0` would natively be `38 × 50 = 1,900` vision tokens). The 1,024-token clamp came from Strata `v0.2.15` (`Niko1221/Strata@c7757280`): `setup.py` defaults GPU vision to `"max_tokens": 1024` when `--vision-tokens` is omitted, `serve/server.py` passes `--max-tokens 1024` to `strata-vision`, and `tools/vision/own/image_prep.cpp` resizes any larger image down to fit `1024 × 32 × 32 = 1,048,576` px.
-- As a result, rendering above `scale = 1.5` (including the current `scale = 2.0` default and up to `4.0`) sent larger PNGs only for the server to downscale them back to `896 × 1152` px before vision encoding.
+- As a result, rendering above `scale = 1.5` (including the `scale = 2.0` baseline and up to `4.0`) sent larger PNGs only for the server to downscale them back to `896 × 1152` px before vision encoding.
 
 ### Finding 2: Accuracy Cliff at `scale = 1.0` (475 Vision Tokens)
 
@@ -92,14 +92,14 @@ After raising Strata's GPU vision cap to `--vision-tokens 8192` in `../homelab-i
 
 Every rung reached the vision encoder at its true rendered resolution (exact match to 32 × 32 px grid math):
 
-| Scale             | DPI | Rendered PNG  | `inputTokens` | Vision Tokens (`−212` text) | Avg Output Tokens | Median Latency |
-| ----------------- | --- | ------------- | ------------- | --------------------------- | ----------------- | -------------- |
-| `1.0`             | 72  | `612 × 792`   | `687`         | `475` (`19 × 25`)           | 2,159             | 13.4 s         |
-| `1.5`             | 108 | `918 × 1188`  | `1,285`       | `1,073` (`29 × 37`)         | 2,120             | 12.0 s         |
-| `2.0` _(default)_ | 144 | `1224 × 1584` | `2,112`       | `1,900` (`38 × 50`)         | 2,021             | 15.8 s         |
-| `2.5`             | 180 | `1530 × 1980` | `3,188`       | `2,976` (`48 × 62`)         | 2,386             | 16.3 s         |
-| `3.0`             | 216 | `1836 × 2376` | `4,430`       | `4,218` (`57 × 74`)         | 1,888             | 16.9 s         |
-| `4.0`             | 288 | `2448 × 3168` | `7,835`       | `7,623` (`77 × 99`)         | 1,923             | 31.2 s         |
+| Scale              | DPI | Rendered PNG  | `inputTokens` | Vision Tokens (`−212` text) | Avg Output Tokens | Median Latency |
+| ------------------ | --- | ------------- | ------------- | --------------------------- | ----------------- | -------------- |
+| `1.0`              | 72  | `612 × 792`   | `687`         | `475` (`19 × 25`)           | 2,159             | 13.4 s         |
+| `1.5`              | 108 | `918 × 1188`  | `1,285`       | `1,073` (`29 × 37`)         | 2,120             | 12.0 s         |
+| `2.0` _(baseline)_ | 144 | `1224 × 1584` | `2,112`       | `1,900` (`38 × 50`)         | 2,021             | 15.8 s         |
+| `2.5`              | 180 | `1530 × 1980` | `3,188`       | `2,976` (`48 × 62`)         | 2,386             | 16.3 s         |
+| `3.0`              | 216 | `1836 × 2376` | `4,430`       | `4,218` (`57 × 74`)         | 1,888             | 16.9 s         |
+| `4.0`              | 288 | `2448 × 3168` | `7,835`       | `7,623` (`77 × 99`)         | 1,923             | 31.2 s         |
 
 Latency stayed nearly flat from `2.0` through `3.0` (~15.8–16.9 s median) and roughly doubled at `4.0` (31.2 s median, consuming ~48% of the `_16k` context window).
 
